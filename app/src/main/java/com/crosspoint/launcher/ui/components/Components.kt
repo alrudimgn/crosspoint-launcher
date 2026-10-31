@@ -307,10 +307,12 @@ fun LauncherAppIcon(
     when (settings.launcherIconStyle) {
         LauncherIconStyle.ICONS -> {
             val override = settings.appIconOverrides[app.key]
-            if (override == null && app.icon != null && (app.packageName.startsWith("com.wetao.") || app.packageName == "com.android.settings")) {
+            if (override != null) {
+                LucideIcon(override, modifier.size(size))
+            } else if (app.icon != null) {
                 AppIcon(app.icon, app.label, size, modifier)
             } else {
-                LucideIcon(override ?: defaultIconForApp(app), modifier.size(size))
+                LucideIcon(defaultIconForApp(app), modifier.size(size))
             }
         }
         LauncherIconStyle.DOTS -> Box(

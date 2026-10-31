@@ -34,14 +34,17 @@ class AppRepository(private val context: Context) {
             .sortedBy { it.label.lowercase() }
     }
 
-    /** Apps able to open books (ACTION_VIEW with EPUB or FB2 mime types). */
+    /** Apps able to open books (ACTION_VIEW with EPUB, FB2, PDF, DJVU mime types). */
     suspend fun loadReaderApps(): List<AppInfo> = withContext(Dispatchers.IO) {
         val mimes = listOf(
             EPUB_MIME,
             "application/x-fictionbook+xml",
             "application/x-fictionbook",
             "application/x-fb2",
-            "application/x-zip-compressed"
+            "application/x-zip-compressed",
+            "application/pdf",
+            "image/vnd.djvu",
+            "application/x-djvu"
         )
         val all = mutableListOf<ResolveInfo>()
         for (mime in mimes) {

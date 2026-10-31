@@ -41,8 +41,10 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.crosspoint.launcher.LauncherViewModel
 import com.crosspoint.launcher.model.AppInfo
+import com.crosspoint.launcher.model.AppLanguage
 import com.crosspoint.launcher.model.AppearanceMode
 import com.crosspoint.launcher.model.CoverSlotMode
 import com.crosspoint.launcher.model.HomeMenuItem
@@ -65,6 +67,8 @@ import com.crosspoint.launcher.BuildConfig
 import com.crosspoint.launcher.util.ApkInstall
 import com.crosspoint.launcher.util.AppUpdater
 import com.crosspoint.launcher.util.AuroraInstaller
+import com.crosspoint.launcher.util.L10n
+import com.crosspoint.launcher.util.LocalAppLanguage
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 import java.io.File
@@ -90,6 +94,8 @@ fun SettingsScreen(
     val context = LocalContext.current
     val colors = CrossPointTheme.colors
     val m = CrossPointTheme.metrics
+    val lang = LocalAppLanguage.current
+    val isRu = lang == AppLanguage.RUSSIAN
     val settings by vm.settings.collectAsState()
     val apps by vm.apps.collectAsState()
     val readerApps by vm.readerApps.collectAsState()
@@ -99,6 +105,7 @@ fun SettingsScreen(
     val opdsServers by vm.opdsServers.collectAsState()
     val topPad = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var editingIconFor by remember { mutableStateOf<AppInfo?>(null) }
+    var folderPickerOpen by remember { mutableStateOf(false) }
 
     editingIconFor?.let { app ->
         IconPickerScreen(
@@ -117,6 +124,18 @@ fun SettingsScreen(
         return
     }
 
+    if (folderPickerOpen) {
+        FolderPickerDialog(
+            initialFolder = settings.libraryFolder.ifBlank { "/sdcard/Books" },
+            onSelectFolder = { selected ->
+                vm.setLibraryFolder(selected)
+                folderPickerOpen = false
+                android.widget.Toast.makeText(context, L10n.folderSelectedToast(selected.ifBlank { L10n.libraryRootDefault(lang) }, lang), android.widget.Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { folderPickerOpen = false }
+        )
+    }
+
     var category by remember { mutableStateOf<String?>(null) }
     val storeInstalled = apps.any { it.packageName == AuroraInstaller.PACKAGE }
     val scope = rememberCoroutineScope()
@@ -130,21 +149,21 @@ fun SettingsScreen(
     }
     var storeStatus by remember { mutableStateOf<String?>(null) }
     var installing by remember { mutableStateOf(false) }
-    // Download, verify and hand an APK to the system installer, reporting progress through setStatus.
+
     fun downloadAndInstall(setStatus: (String?) -> Unit, download: suspend (onProgress: (Int) -> Unit) -> File) {
         if (installing) return
-        if (!ApkInstall.ensureCanInstall(context)) { setStatus("Allow installs, then tap again"); return }
+        if (!ApkInstall.ensureCanInstall(context)) { setStatus(if (isRu) "Разрешите установку и повторите" else "Allow installs, then tap again"); return }
         installing = true
         scope.launch {
             try {
-                setStatus("Downloading…")
-                val apk = download { setStatus("Downloading… ${it / 10 * 10}%") }
+                setStatus(if (isRu) "Загрузка…" else "Downloading…")
+                val apk = download { setStatus(if (isRu) "Загрузка… ${it / 10 * 10}%" else "Downloading… ${it / 10 * 10}%") }
                 setStatus(null)
                 ApkInstall.install(context, apk)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                setStatus(e.message ?: "Download failed")
+                setStatus(e.message ?: if (isRu) "Ошибка загрузки" else "Download failed")
             } finally {
                 installing = false
             }
@@ -152,63 +171,69 @@ fun SettingsScreen(
     }
     fun getStore() = downloadAndInstall({ storeStatus = it }) { AuroraInstaller.download(context, it) }
 
-    // Version in the header doubles as the update button.
-    var update by remember { mutableStateOf<AppUpdater.Release?>(null) }
     var updateStatus by remember { mutableStateOf<String?>(null) }
-    var checking by remember { mutableStateOf(false) }
-    fun checkForUpdate(manual: Boolean) {
-        if (checking) return
-        checking = true
+    fun onVersionTap() {
+        updateStatus = L10n.updatesDisabled(lang)
         scope.launch {
-            if (manual) updateStatus = "Checking for updates…"
-            val result = runCatching { AppUpdater.check() }
-            update = result.getOrNull()
-            updateStatus = when {
-                !manual || update != null -> null
-                result.isFailure -> "Check failed"
-                else -> "Up to date"
-            }
-            checking = false
-            if (updateStatus != null) { delay(2000); updateStatus = null }
+            delay(2500)
+            updateStatus = null
         }
     }
-    LaunchedEffect(Unit) { checkForUpdate(manual = false) }
-    fun onVersionTap() {
-        val release = update
-        if (release == null) checkForUpdate(manual = true)
-        else downloadAndInstall({ updateStatus = it }) { AppUpdater.download(context, release, it) }
-    }
+
     val categories = listOf(
-        "Home Theme" to "layout_grid", "Appearance" to "sun",
-        "App Search" to "search", "CrossPoint Sync" to "crosspoint", "Default Reader" to "book_open",
-        "Home Screen Items" to "rows_3", "OPDS Catalogs" to "library",
-        "Library" to "folder_open", (if (storeInstalled) "App Store" else "Get App Store") to "store",
+        "Language" to "globe",
+        "Home Theme" to "layout_grid",
+        "Appearance" to "sun",
+        "App Search" to "search",
+        "CrossPoint Sync" to "crosspoint",
+        "Default Reader" to "book_open",
+        "Home Screen Items" to "rows_3",
+        "OPDS Catalogs" to "library",
+        "Library" to "folder_open",
+        (if (storeInstalled) "App Store" else "Get App Store") to "store",
         "Device Settings" to "settings"
     )
+
+    fun categoryLabel(key: String): String = when (key) {
+        "Language" -> L10n.languageCategory(lang)
+        "Home Theme" -> L10n.homeThemeCategory(lang)
+        "Appearance" -> L10n.appearanceCategory(lang)
+        "App Search" -> L10n.appSearchCategory(lang)
+        "CrossPoint Sync" -> L10n.syncCategory(lang)
+        "Default Reader" -> L10n.defaultReaderCategory(lang)
+        "Home Screen Items" -> L10n.homeItemsCategory(lang)
+        "OPDS Catalogs" -> L10n.opdsCategory(lang)
+        "Library" -> L10n.libraryCategory(lang)
+        "Device Settings" -> L10n.deviceSettingsCategory(lang)
+        "App Store", "Get App Store" -> L10n.appStoreCategory(storeInstalled, lang)
+        else -> key
+    }
+
     androidx.activity.compose.BackHandler(category != null) { category = null }
     Column(Modifier.fillMaxSize().padding(top = topPad)) {
-        ScreenHeader(category ?: "Settings", { if (category == null) onBack() else category = null }) {
+        ScreenHeader(if (category == null) L10n.settings(lang) else categoryLabel(category!!), { if (category == null) onBack() else category = null }) {
             if (category == null) Pressable(onClick = ::onVersionTap) {
-                BodyText(updateStatus ?: update?.let { "Update" } ?: "v${BuildConfig.VERSION_NAME}",
-                    weight = if (update != null) FontWeight.Bold else FontWeight.Normal, size = 14, maxLines = 1,
+                BodyText(updateStatus ?: "v${BuildConfig.VERSION_NAME}",
+                    weight = FontWeight.Normal, size = 13, maxLines = 1,
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp))
             }
         }
         val bookCount = vm.books.collectAsState().value.size
         if (category == null) {
             ScrollList(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = m.contentSidePadding)) {
-                items(categories) { (title, icon) ->
+                items(categories) { (catKey, icon) ->
+                    val displayLabel = categoryLabel(catKey)
                     Pressable(onClick = {
-                        when (title) {
+                        when (catKey) {
                             "App Store" -> Launching.launchPackage(context, AuroraInstaller.PACKAGE)
                             "Get App Store" -> getStore()
-                            else -> category = title
+                            else -> category = catKey
                         }
                     }, modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             LucideIcon(icon, Modifier.size(24.dp))
                             Spacer(Modifier.width(16.dp))
-                            BodyText(if (title == "Get App Store") storeStatus ?: title else title, size = 18, modifier = Modifier.weight(1f))
+                            BodyText(if (catKey == "Get App Store") storeStatus ?: displayLabel else displayLabel, size = 18, modifier = Modifier.weight(1f))
                             LucideIcon("chevron_right", Modifier.size(18.dp))
                         }
                     }
@@ -216,22 +241,32 @@ fun SettingsScreen(
             }
         } else ScrollList(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = m.contentSidePadding), state = remember(category) { androidx.compose.foundation.lazy.LazyListState() }) {
             when (category) {
-                "Home Theme" -> items(ThemeType.entries.filter { it != ThemeType.CAROUSEL }) { theme -> SelectRow(theme.label, theme.description, settings.theme == theme) { vm.setTheme(theme) } }
-                "Appearance" -> {
-                    items(AppearanceMode.entries) { mode -> SelectRow(mode.label, "", settings.appearance == mode) { vm.setAppearance(mode) } }
-                    items(CoverSlotMode.entries) { mode -> SelectRow(mode.label, "Cover area", settings.coverSlotMode == mode) { vm.setCoverSlotMode(mode) } }
-                    if (settings.coverSlotMode == CoverSlotMode.WIDGET) {
-                        item { ActionRow("Choose Widget", "", "app_window", onPickWidget) }
-                        item { ActionRow("Clear Widget", "", "x", onClearWidget) }
+                "Language" -> {
+                    items(AppLanguage.entries) { item ->
+                        val sub = if (item == AppLanguage.RUSSIAN) "Русский язык интерфейса" else "English user interface"
+                        SelectRow(item.label, sub, settings.language == item) {
+                            vm.setLanguage(item)
+                        }
                     }
-                    item { BodyText("Sleep Screen", weight = FontWeight.Bold, size = 14, muted = true, modifier = Modifier.padding(top = 12.dp, start = 6.dp)) }
+                }
+                "Home Theme" -> items(ThemeType.entries.filter { it != ThemeType.CAROUSEL }) { theme ->
+                    SelectRow(L10n.theme(theme, lang), L10n.themeDescription(theme, lang), settings.theme == theme) { vm.setTheme(theme) }
+                }
+                "Appearance" -> {
+                    items(AppearanceMode.entries) { mode -> SelectRow(L10n.appearance(mode, lang), "", settings.appearance == mode) { vm.setAppearance(mode) } }
+                    items(CoverSlotMode.entries) { mode -> SelectRow(L10n.coverSlot(mode, lang), if (isRu) "Область обложки" else "Cover area", settings.coverSlotMode == mode) { vm.setCoverSlotMode(mode) } }
+                    if (settings.coverSlotMode == CoverSlotMode.WIDGET) {
+                        item { ActionRow(if (isRu) "Выбрать виджет" else "Choose Widget", "", "app_window", onPickWidget) }
+                        item { ActionRow(if (isRu) "Очистить виджет" else "Clear Widget", "", "x", onClearWidget) }
+                    }
+                    item { BodyText(L10n.sleepScreen(lang), weight = FontWeight.Bold, size = 14, muted = true, modifier = Modifier.padding(top = 12.dp, start = 6.dp)) }
                     items(SleepScreenMode.entries.filter { it != SleepScreenMode.CUSTOM || imagePickerAvailable }) { mode ->
                         val sub = when (mode) {
-                            SleepScreenMode.BOOK_COVER -> recentBook?.title ?: "No book cover found"
-                            SleepScreenMode.CUSTOM -> "Pick an image"
+                            SleepScreenMode.BOOK_COVER -> recentBook?.title ?: (if (isRu) "Обложка книги не найдена" else "No book cover found")
+                            SleepScreenMode.CUSTOM -> if (isRu) "Выбрать изображение" else "Pick an image"
                             SleepScreenMode.OFF -> ""
                         }
-                        SelectRow(mode.label, sub, settings.sleepScreenMode == mode) {
+                        SelectRow(L10n.sleepMode(mode, lang), sub, settings.sleepScreenMode == mode) {
                             vm.setSleepScreenMode(mode)
                             when (mode) {
                                 SleepScreenMode.BOOK_COVER -> recentBook?.coverPath?.let { cover ->
@@ -242,43 +277,42 @@ fun SettingsScreen(
                             }
                         }
                     }
-                    item { ToggleRow("Show Date", "calendar", settings.showLauncherDate) { vm.setShowLauncherDate(!settings.showLauncherDate) } }
-                    item { ToggleRow("Show Clock", "clock", settings.showLauncherClock) { vm.setShowLauncherClock(!settings.showLauncherClock) } }
-                    item { ToggleRow("Show Battery", "battery", settings.showLauncherBattery) { vm.setShowLauncherBattery(!settings.showLauncherBattery) } }
-                    item { ToggleRow("Show Wi-Fi", "wifi", settings.showLauncherWifi) { vm.setShowLauncherWifi(!settings.showLauncherWifi) } }
+                    item { ToggleRow(L10n.showDate(lang), "calendar", settings.showLauncherDate) { vm.setShowLauncherDate(!settings.showLauncherDate) } }
+                    item { ToggleRow(L10n.showClock(lang), "clock", settings.showLauncherClock) { vm.setShowLauncherClock(!settings.showLauncherClock) } }
+                    item { ToggleRow(L10n.showBattery(lang), "battery", settings.showLauncherBattery) { vm.setShowLauncherBattery(!settings.showLauncherBattery) } }
+                    item { ToggleRow(L10n.showWifi(lang), "wifi", settings.showLauncherWifi) { vm.setShowLauncherWifi(!settings.showLauncherWifi) } }
                 }
                 "App Search" -> {
-                    items(SearchGesture.entries) { gesture -> SelectRow(gesture.label, "", settings.searchGesture == gesture) { vm.setSearchGesture(gesture) } }
-                    item { ToggleRow("Show Keyboard Automatically", "search", settings.showKeyboardAutomatically) { vm.setShowKeyboardAutomatically(!settings.showKeyboardAutomatically) } }
-                    item { ToggleRow("Auto-Open Single Result", "check", settings.autoOpenSingleResult) { vm.setAutoOpenSingleResult(!settings.autoOpenSingleResult) } }
+                    items(SearchGesture.entries) { gesture -> SelectRow(L10n.searchGesture(gesture, lang), "", settings.searchGesture == gesture) { vm.setSearchGesture(gesture) } }
+                    item { ToggleRow(L10n.showKeyboard(lang), "search", settings.showKeyboardAutomatically) { vm.setShowKeyboardAutomatically(!settings.showKeyboardAutomatically) } }
+                    item { ToggleRow(L10n.autoOpenMatch(lang), "check", settings.autoOpenSingleResult) { vm.setAutoOpenSingleResult(!settings.autoOpenSingleResult) } }
                 }
                 "CrossPoint Sync" -> {
-                    item { ActionRow("Account and Reading Stats", "Log in or sign up", "globe") { context.startActivity(android.content.Intent(context, com.crosspoint.launcher.SyncAccountActivity::class.java)) } }
-                    item { ActionRow("Fetch Missing Covers", "Adds books to your synced library", "download") { if (!syncBusy) vm.fetchMissingCovers() } }
+                    item { ActionRow(if (isRu) "Аккаунт и статистика чтения" else "Account and Reading Stats", if (isRu) "Вход или регистрация" else "Log in or sign up", "globe") { context.startActivity(android.content.Intent(context, com.crosspoint.launcher.SyncAccountActivity::class.java)) } }
+                    item { ActionRow(if (isRu) "Загрузить недостающие обложки" else "Fetch Missing Covers", if (isRu) "Добавить обложки к книгам" else "Adds books to your synced library", "download") { if (!syncBusy) vm.fetchMissingCovers() } }
                     item {
-                        // Same toggle as the firmware's CrossPoint Sync > Sync Clippings; syncs with each book's reading position.
                         val sync = remember { com.crosspoint.launcher.data.SyncRepository(context) }
                         var syncClippings by remember { mutableStateOf(sync.syncClippings) }
-                        ToggleRow("Sync Clippings", "file_text", syncClippings) { syncClippings = !syncClippings; sync.syncClippings = syncClippings }
+                        ToggleRow(if (isRu) "Синхронизировать цитаты" else "Sync Clippings", "file_text", syncClippings) { syncClippings = !syncClippings; sync.syncClippings = syncClippings }
                     }
-                    item { ActionRow("Disconnect", "Keep downloaded covers", "x") { if (!syncBusy) vm.disconnectSync() } }
+                    item { ActionRow(if (isRu) "Отключить" else "Disconnect", if (isRu) "Сохранить скачанные обложки" else "Keep downloaded covers", "x") { if (!syncBusy) vm.disconnectSync() } }
                     if (syncStatus.isNotBlank()) item { BodyText(syncStatus, muted = true, size = 14, maxLines = 4) }
                 }
                 "Default Reader" -> {
-                    item { SelectRow("CrossPoint Reader", "Built-in EPUB reader", settings.defaultReaderPackage == null) { vm.setDefaultReader(null) } }
+                    item { SelectRow(if (isRu) "Встроенный ридер" else "CrossPoint Reader", if (isRu) "Для EPUB и FB2" else "Built-in EPUB reader", settings.defaultReaderPackage == null) { vm.setDefaultReader(null) } }
                     items(readerApps) { app -> SelectRow(app.label, app.packageName, settings.defaultReaderPackage == app.packageName) { vm.setDefaultReader(app.packageName) } }
                 }
                 "Home Screen Items" -> {
                     item {
                         Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            BodyText("App Icon Style", muted = true, size = 14)
+                            BodyText(L10n.launcherIcons(lang), muted = true, size = 14)
                             Row(Modifier.fillMaxWidth()) {
                                 LauncherIconStyle.entries.forEach { style ->
                                     Pressable(onClick = { vm.setLauncherIconStyle(style) }, modifier = Modifier.weight(1f)) {
                                         Column(Modifier.fillMaxWidth().height(56.dp), horizontalAlignment = Alignment.CenterHorizontally,
                                             verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)) {
                                             RadioDot(settings.launcherIconStyle == style)
-                                            BodyText(style.label, size = 14)
+                                            BodyText(L10n.iconStyle(style, lang), size = 14)
                                         }
                                     }
                                 }
@@ -288,27 +322,164 @@ fun SettingsScreen(
                     val selected = orderedHomeItems(settings.effectiveHomeMenu(opdsServers.isNotEmpty()), vm.pinnedAppInfos(settings, apps), settings)
                     val entries = selected.map { it.key }
                     val available = HomeMenuItem.entries.map { LauncherColumnItem.MenuAction(it) } + apps.map { LauncherColumnItem.PinnedApp(it) }
-                    item { BodyText("${entries.size} of 5 Items Selected", weight = FontWeight.Medium, size = 16) }
-                    item { BodyText("Choose up to five Home shortcuts. Tap an app icon to change it.", muted = true, size = 14, maxLines = Int.MAX_VALUE) }
+                    val maxItems = com.crosspoint.launcher.data.LauncherSettings.MAX_HOME_ITEMS
+                    item { BodyText("${entries.size} / $maxItems " + (if (isRu) "элементов выбрано" else "Items Selected"), weight = FontWeight.Medium, size = 16) }
+                    item { BodyText(if (isRu) "Выберите до $maxItems элементов на главном экране. Нажмите на значок для настройки." else "Choose up to $maxItems Home shortcuts. Tap an app icon to change it.", muted = true, size = 14, maxLines = Int.MAX_VALUE) }
                     items(selected + available.filterNot { it.key in entries }, key = { it.key }) { entry ->
                         HomeItemSettingsRow(entry, settings, entries, { vm.setHomeItems(it) }, {
                             if (entry is LauncherColumnItem.PinnedApp) editingIconFor = entry.app
                         })
                     }
                 }
-                "OPDS Catalogs" -> item { ActionRow("OPDS Servers", "${opdsServers.size} configured", "library", onOpenOpdsServers) }
+                "OPDS Catalogs" -> item { ActionRow(if (isRu) "Серверы OPDS" else "OPDS Servers", "${opdsServers.size} " + (if (isRu) "настроено" else "configured"), "library", onOpenOpdsServers) }
                 "Library" -> {
-                    item { ActionRow(if (hasStorage) "Storage Access Granted" else "Grant Storage Access", "Read local EPUB books", "folder_open") { Launching.openManageStorageSettings(context) } }
-                    item { ActionRow("Rescan Library", "$bookCount books found", "rotate_cw") { vm.refreshBooks() } }
+                    val rootDisplay = if (settings.libraryFolder.isNotBlank()) settings.libraryFolder else L10n.libraryRootDefault(lang)
+                    item { ActionRow(L10n.libraryRootFolder(lang), rootDisplay, "folder") { folderPickerOpen = true } }
+                    item { ActionRow(if (hasStorage) L10n.storageGranted(lang) else L10n.grantStorageAccess(lang), L10n.storageAccessDesc(lang), "folder_open") { Launching.openManageStorageSettings(context) } }
+                    item { ActionRow(L10n.rescanLibrary(lang), L10n.booksFound(bookCount, lang), "rotate_cw") { vm.refreshBooks() } }
                 }
                 "Device Settings" -> {
-                    item { ActionRow("Restart Onboarding", "Re-run storage, Wi-Fi and launcher setup, and the tips", "rotate_cw") {
+                    item { ActionRow(L10n.restartOnboarding(lang), L10n.restartOnboardingDesc(lang), "rotate_cw") {
                         context.startActivity(android.content.Intent(context, com.crosspoint.launcher.PermissionSetupActivity::class.java))
                     } }
-                    item { ActionRow("Set as Default Launcher", "Open system home settings", "smartphone") { Launching.openHomeSettings(context) } }
-                    item { ToggleRow("Double-Tap Header to Refresh", "rotate_cw", settings.doubleTapRefresh) { vm.setDoubleTapRefresh(!settings.doubleTapRefresh) } }
+                    item { ActionRow(L10n.setAsDefaultLauncher(lang), L10n.setAsDefaultLauncherDesc(lang), "smartphone") { Launching.openHomeSettings(context) } }
+                    item { ToggleRow(L10n.doubleTapRefresh(lang), "rotate_cw", settings.doubleTapRefresh) { vm.setDoubleTapRefresh(!settings.doubleTapRefresh) } }
                     items(DeviceSettings.available(context)) { panel ->
                         ActionRow(panel.label, "", panel.icon) { DeviceSettings.open(context, panel) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Interactive folder picker for choosing the root library folder. */
+@Composable
+private fun FolderPickerDialog(
+    initialFolder: String,
+    onSelectFolder: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = CrossPointTheme.colors
+    val lang = LocalAppLanguage.current
+    val isRu = lang == AppLanguage.RUSSIAN
+
+    val sdcard = android.os.Environment.getExternalStorageDirectory()
+    val initialFile = File(initialFolder).let { if (it.exists() && it.isDirectory) it else sdcard }
+    var currentDir by remember { mutableStateOf(initialFile) }
+
+    val presets = listOf(
+        File(sdcard, "Books"),
+        sdcard,
+        File(sdcard, "Download"),
+        File(sdcard, "Documents"),
+        File(sdcard, "koreader")
+    ).filter { it.exists() && it.isDirectory }
+
+    val subdirs = remember(currentDir) {
+        val files = currentDir.listFiles()?.filter {
+            it.isDirectory && !it.name.startsWith(".") && it.canRead()
+        }?.sortedBy { it.name.lowercase() } ?: emptyList()
+        files
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(colors.background)
+                .border(2.dp, colors.divider, RoundedCornerShape(10.dp))
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            BodyText(L10n.chooseFolderTitle(lang), weight = FontWeight.Bold, size = 18)
+
+            // Current folder indicator
+            Column(Modifier.fillMaxWidth().background(colors.surface).padding(8.dp)) {
+                BodyText(L10n.currentFolderLabel(lang), muted = true, size = 12)
+                BodyText(currentDir.absolutePath, weight = FontWeight.SemiBold, size = 14, maxLines = 2)
+            }
+
+            // Quick presets
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                BodyText(L10n.presetFolders(lang), muted = true, size = 12, weight = FontWeight.Medium)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    presets.take(3).forEach { preset ->
+                        Pressable(onClick = { currentDir = preset }, modifier = Modifier.weight(1f)) {
+                            Box(
+                                Modifier.border(1.dp, colors.divider, RoundedCornerShape(4.dp))
+                                    .padding(vertical = 6.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                BodyText(preset.name.ifEmpty { "sdcard" }, size = 12, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
+
+            // Subdirectories list
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 220.dp)
+            ) {
+                ScrollList(Modifier.fillMaxWidth()) {
+                    if (currentDir.parentFile != null && currentDir.absolutePath != "/sdcard" && currentDir.absolutePath != sdcard.absolutePath) {
+                        item {
+                            Pressable(onClick = { currentDir.parentFile?.let { currentDir = it } }, modifier = Modifier.fillMaxWidth()) {
+                                Row(Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    LucideIcon("chevron_up", Modifier.size(18.dp))
+                                    Spacer(Modifier.width(10.dp))
+                                    BodyText(L10n.upFolder(lang), weight = FontWeight.Bold, size = 14)
+                                }
+                            }
+                        }
+                    }
+                    items(subdirs) { dir ->
+                        Pressable(onClick = { currentDir = dir }, modifier = Modifier.fillMaxWidth()) {
+                            Row(Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                LucideIcon("folder", Modifier.size(18.dp))
+                                Spacer(Modifier.width(10.dp))
+                                BodyText(dir.name, size = 14, maxLines = 1, modifier = Modifier.weight(1f))
+                                LucideIcon("chevron_right", Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
+
+            // Action buttons
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Pressable(onClick = { onSelectFolder(currentDir.absolutePath) }, modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        Modifier.fillMaxWidth().background(colors.onBackground).padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BodyText(L10n.selectFolder(lang), weight = FontWeight.Bold, size = 14, color = colors.background)
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pressable(onClick = { onSelectFolder("") }, modifier = Modifier.weight(1f)) {
+                        Box(
+                            Modifier.fillMaxWidth().border(1.dp, colors.divider, RoundedCornerShape(4.dp)).padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            BodyText(L10n.resetFolderToDefault(lang), size = 13)
+                        }
+                    }
+                    Pressable(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                        Box(
+                            Modifier.fillMaxWidth().border(1.dp, colors.divider, RoundedCornerShape(4.dp)).padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            BodyText(if (isRu) "Отмена" else "Cancel", size = 13)
+                        }
                     }
                 }
             }
@@ -326,6 +497,8 @@ private fun IconPickerScreen(
 ) {
     val colors = CrossPointTheme.colors
     val m = CrossPointTheme.metrics
+    val lang = LocalAppLanguage.current
+    val isRu = lang == AppLanguage.RUSSIAN
     val topPad = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var query by remember { mutableStateOf("") }
     val filtered = remember(query) {
@@ -333,10 +506,10 @@ private fun IconPickerScreen(
         else LucideIconLibrary.filter { it.contains(query.trim(), ignoreCase = true) }
     }
     Column(Modifier.fillMaxSize().padding(top = topPad)) {
-        ScreenHeader("Choose Icon", onBack) {
+        ScreenHeader(if (isRu) "Выбор иконки" else "Choose Icon", onBack) {
             Pressable(onClick = onReset) {
                 Box(Modifier.height(48.dp).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
-                    BodyText("Default", weight = FontWeight.SemiBold, size = 14)
+                    BodyText(if (isRu) "По умолчанию" else "Default", weight = FontWeight.SemiBold, size = 14)
                 }
             }
         }
@@ -355,7 +528,7 @@ private fun IconPickerScreen(
                 cursorBrush = SolidColor(colors.onBackground),
                 modifier = Modifier.weight(1f),
                 decorationBox = { inner ->
-                    if (query.isEmpty()) BodyText("Search icons", muted = true, size = 16)
+                    if (query.isEmpty()) BodyText(if (isRu) "Поиск иконок…" else "Search icons", muted = true, size = 16)
                     inner()
                 }
             )
@@ -421,7 +594,6 @@ internal fun ToggleRow(title: String, icon: String, enabled: Boolean, onToggle: 
     }
 }
 
-
 @Composable
 private fun HomeItemSettingsRow(
     item: LauncherColumnItem,
@@ -431,39 +603,45 @@ private fun HomeItemSettingsRow(
     onChooseIcon: () -> Unit
 ) {
     val context = LocalContext.current
+    val lang = LocalAppLanguage.current
+    val isRu = lang == AppLanguage.RUSSIAN
     val entry = item.key
     val index = selectedEntries.indexOf(entry)
     Column(Modifier.fillMaxWidth()) {
         Pressable(
             onClick = {
                 if (index < 0 && selectedEntries.size >= com.crosspoint.launcher.data.LauncherSettings.MAX_HOME_ITEMS) {
-                    android.widget.Toast.makeText(context, "Home can show up to 5 items", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(context, L10n.homeItemsLimit(lang, com.crosspoint.launcher.data.LauncherSettings.MAX_HOME_ITEMS), android.widget.Toast.LENGTH_SHORT).show()
                 } else onSetItems(if (index >= 0) selectedEntries - entry else selectedEntries + entry)
             },
             modifier = Modifier.fillMaxWidth().semantics {
                 role = Role.Checkbox
-                stateDescription = if (index >= 0) "Selected" else "Not Selected"
+                stateDescription = if (index >= 0) "selected" else "not selected"
             }
         ) {
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 4.dp, horizontal = 6.dp),
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 10.dp, horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                    when (item) {
-                        is LauncherColumnItem.MenuAction -> LucideIcon(item.item.icon, Modifier.size(32.dp))
-                        is LauncherColumnItem.PinnedApp -> Pressable(onClick = onChooseIcon,
-                            modifier = Modifier.semantics { contentDescription = "Change Icon for ${item.label}" }) {
-                            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                                LauncherAppIcon(item.app, settings, size = 32.dp)
+                when (item) {
+                    is LauncherColumnItem.MenuAction -> {
+                        LucideIcon(item.item.icon, Modifier.size(24.dp))
+                    }
+                    is LauncherColumnItem.PinnedApp -> {
+                        Pressable(
+                            onClick = onChooseIcon,
+                            modifier = Modifier.semantics {
+                                role = Role.Button
+                                contentDescription = "Change icon for ${item.app.label}"
                             }
+                        ) {
+                            LauncherAppIcon(item.app, settings, size = 32.dp)
                         }
                     }
                 }
                 Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
-                    BodyText(item.label, weight = FontWeight.Medium, size = 16, maxLines = Int.MAX_VALUE)
-
+                    BodyText(item.label(lang), weight = FontWeight.Medium, size = 16, maxLines = Int.MAX_VALUE)
                 }
                 Spacer(Modifier.width(12.dp))
                 CheckBox(index >= 0)
@@ -482,7 +660,7 @@ private fun HomeItemSettingsRow(
                             }, modifier = Modifier.fillMaxWidth()) {
                                 Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                                     LucideIcon(if (direction < 0) "chevron_up" else "chevron_down", Modifier.size(20.dp))
-                                    BodyText(if (direction < 0) "Move Up" else "Move Down", size = 14, maxLines = Int.MAX_VALUE)
+                                    BodyText(if (direction < 0) L10n.moveUp(lang) else L10n.moveDown(lang), size = 14, maxLines = Int.MAX_VALUE)
                                 }
                             }
                         }

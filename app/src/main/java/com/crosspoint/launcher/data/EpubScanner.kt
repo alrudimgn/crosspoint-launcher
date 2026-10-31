@@ -1,7 +1,12 @@
 package com.crosspoint.launcher.data
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
 import android.os.Environment
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import org.json.JSONObject
 import kotlinx.coroutines.ensureActive
@@ -12,14 +17,14 @@ import kotlinx.coroutines.withContext
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStream
 import java.security.MessageDigest
 import java.util.zip.ZipFile
 
 /**
- * Scans common storage folders for EPUB files and extracts their cover image + metadata by
- * parsing the EPUB container/OPF directly (no third-party dependency). Covers are cached as
- * downscaled grayscale-friendly JPEGs under cacheDir/covers.
+ * Scans common storage folders for EPUB, FB2, PDF and DJVU files and extracts their cover image + metadata.
+ * Covers are cached as downscaled grayscale-friendly JPEGs under cacheDir/covers.
  */
 class EpubScanner(private val context: Context, private val sync: SyncRepository) {
 
@@ -27,39 +32,76 @@ class EpubScanner(private val context: Context, private val sync: SyncRepository
         File(context.cacheDir, "covers").apply { mkdirs() }
     }
 
-    private fun defaultScanRoots(): List<File> {
+    private fun defaultScanRoots(customRoot: String): List<File> {
+        if (customRoot.isNotBlank()) {
+            val root = File(customRoot)
+            if (root.exists() && root.canRead()) {
+                return listOf(root)
+            }
+        }
         val ext = Environment.getExternalStorageDirectory()
+        val booksDir = File(ext, "Books")
+        if (booksDir.exists() && booksDir.canRead()) {
+            return listOfNotNull(
+                booksDir,
+                File(ext, "Download"),
+                File(ext, "Downloads"),
+                File(ext, "Documents"),
+                File(ext, "KOReader")
+            ).distinctBy { it.absolutePath }
+        }
         return listOfNotNull(
-            File(ext, "Books"),
             File(ext, "Download"),
             File(ext, "Downloads"),
             File(ext, "Documents"),
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
-            File(ext, "KOReader"),
-            ext
+            File(ext, "KOReader")
         ).distinctBy { it.absolutePath }
     }
 
-    suspend fun scan(extraFolders: List<String>): List<Book> = withContext(Dispatchers.IO) {
-        val roots = (defaultScanRoots() + extraFolders.map { File(it) })
+    suspend fun scan(
+        extraFolders: List<String>, 
+        rootFolder: String = "",
+        onBatch: (suspend (List<Book>) -> Unit)? = null
+    ): List<Book> = withContext(Dispatchers.IO) {
+        val roots = (defaultScanRoots(rootFolder) + extraFolders.map { File(it) })
             .filter { it.exists() && it.canRead() }
         val seen = HashSet<String>()
         val files = ArrayList<File>()
         val visited = HashMap<String, Int>()
         for (root in roots) {
-            collectEpubs(root, files, seen, visited, depth = 4)
+            collectBooks(root, files, seen, visited, depth = 4)
         }
-        files.sortedByDescending { it.lastModified() }
-            .mapNotNull {
-                coroutineContext.ensureActive()
-                runCatching { cachedParse(it).let { book ->
-                    book.copy(coverPath = book.coverPath ?: sync.cachedCover(book))
-                } }.getOrNull()
+        files.sortByDescending { it.lastModified() }
+        val result = ArrayList<Book>(files.size)
+        var lastEmitted = System.currentTimeMillis()
+        for (file in files) {
+            coroutineContext.ensureActive()
+            val book = runCatching {
+                cachedParse(file).let { b ->
+                    b.copy(coverPath = b.coverPath ?: sync.cachedCover(b))
+                }
+            }.getOrNull()
+            if (book != null) {
+                result.add(book)
             }
+            if (onBatch != null && (result.size == 6 || result.size == 18 || result.size % 40 == 0 || (System.currentTimeMillis() - lastEmitted > 500 && result.isNotEmpty()))) {
+                lastEmitted = System.currentTimeMillis()
+                onBatch(result.toList())
+            }
+        }
+        if (onBatch != null) {
+            onBatch(result.toList())
+        }
+        result
     }
 
-    private fun collectEpubs(dir: File, out: MutableList<File>, seen: HashSet<String>, visited: MutableMap<String, Int>, depth: Int) {
+    private val ignoredDirNames = setOf(
+        "android", "lost.dir", "dcim", "pictures", "music", "movies",
+        "alarms", "ringtones", "notifications", "system volume information",
+        ".git", ".idea", "cache", "caches", "mireader", "duokan"
+    )
+
+    private fun collectBooks(dir: File, out: MutableList<File>, seen: HashSet<String>, visited: MutableMap<String, Int>, depth: Int) {
         if (depth < 0) return
         val path = dir.safeCanonicalPath()
         if ((visited[path] ?: -1) >= depth) return
@@ -67,8 +109,9 @@ class EpubScanner(private val context: Context, private val sync: SyncRepository
         val children = dir.listFiles() ?: return
         for (f in children) {
             if (f.isDirectory) {
-                if (f.name.startsWith(".")) continue
-                collectEpubs(f, out, seen, visited, depth - 1)
+                val lname = f.name.lowercase()
+                if (lname.startsWith(".") || lname.endsWith(".sdr") || lname in ignoredDirNames) continue
+                collectBooks(f, out, seen, visited, depth - 1)
             } else if (isSupportedBook(f)) {
                 val key = f.safeCanonicalPath()
                 if (seen.add(key)) out.add(File(key))
@@ -78,7 +121,8 @@ class EpubScanner(private val context: Context, private val sync: SyncRepository
 
     private fun isSupportedBook(file: File): Boolean {
         val name = file.name.lowercase()
-        if (name.endsWith(".epub") || name.endsWith(".fb2") || name.endsWith(".fb2.zip")) {
+        if (name.endsWith(".epub") || name.endsWith(".fb2") || name.endsWith(".fb2.zip") ||
+            name.endsWith(".pdf") || name.endsWith(".djvu") || name.endsWith(".djv")) {
             return true
         }
         if (name.endsWith(".zip")) {
@@ -93,6 +137,8 @@ class EpubScanner(private val context: Context, private val sync: SyncRepository
         }
         return false
     }
+
+    fun cachedParsePublic(file: File): Book = cachedParse(file)
 
     private fun cachedParse(file: File): Book {
         val cache = File(context.cacheDir, "epub_metadata").apply { mkdirs() }
@@ -118,8 +164,15 @@ class EpubScanner(private val context: Context, private val sync: SyncRepository
     }
 
     private fun parse(file: File): Book {
+        val name = file.name.lowercase()
         if (com.crosspoint.launcher.reader.Fb2Document.isFb2(file)) {
             return parseFb2(file)
+        }
+        if (name.endsWith(".pdf")) {
+            return parsePdf(file)
+        }
+        if (name.endsWith(".djvu") || name.endsWith(".djv")) {
+            return parseDjvu(file)
         }
         ZipFile(file).use { zip ->
             val opfPath = findOpfPath(zip)
@@ -179,6 +232,72 @@ class EpubScanner(private val context: Context, private val sync: SyncRepository
                 lastModified = file.lastModified()
             )
         }
+    }
+
+    private fun parsePdf(file: File): Book {
+        val title = file.nameWithoutExtension
+        val coverFile = extractPdfCover(file)
+        return Book(
+            filePath = file.safeCanonicalPath(),
+            title = title,
+            author = "",
+            coverPath = coverFile?.absolutePath,
+            lastModified = file.lastModified()
+        )
+    }
+
+    private fun extractPdfCover(file: File): File? {
+        val hash = sha1(file.absolutePath + ":" + file.lastModified() + ":" + file.length())
+        val out = File(coverDir, "$hash.jpg")
+        if (out.exists() && out.length() > 0) return out
+        return try {
+            val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY) ?: return null
+            pfd.use { fd ->
+                val renderer = PdfRenderer(fd)
+                renderer.use { r ->
+                    if (r.pageCount == 0) return null
+                    val page = r.openPage(0)
+                    page.use { p ->
+                        val aspect = p.width.toFloat() / p.height.toFloat().coerceAtLeast(1f)
+                        val targetHeight = 800
+                        val targetWidth = (targetHeight * aspect).toInt().coerceIn(300, 800)
+                        val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+                        val canvas = Canvas(bitmap)
+                        canvas.drawColor(Color.WHITE)
+                        p.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+
+                        val temp = File(out.path + ".tmp")
+                        FileOutputStream(temp).use { fos ->
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, fos)
+                        }
+                        bitmap.recycle()
+                        if (temp.renameTo(out)) out else temp.takeIf { it.exists() }
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to render PDF cover for ${file.name}: ${e.message}")
+            null
+        }
+    }
+
+    private fun parseDjvu(file: File): Book {
+        val title = file.nameWithoutExtension
+        val parent = file.parentFile
+        val base = file.nameWithoutExtension
+        val sidecar = listOfNotNull(
+            parent?.let { File(it, "$base.jpg") },
+            parent?.let { File(it, "$base.jpeg") },
+            parent?.let { File(it, "$base.png") },
+            parent?.let { File(it, "$base.cover.jpg") }
+        ).firstOrNull { it.exists() && it.isFile }
+        return Book(
+            filePath = file.safeCanonicalPath(),
+            title = title,
+            author = "",
+            coverPath = sidecar?.absolutePath,
+            lastModified = file.lastModified()
+        )
     }
 
     private fun parseFb2(file: File): Book {

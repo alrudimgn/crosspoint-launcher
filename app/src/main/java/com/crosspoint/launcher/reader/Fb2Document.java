@@ -436,7 +436,7 @@ public final class Fb2Document {
 
         private boolean inDescription, inTitleInfo, inBookTitle, inAuthor;
         private boolean inFirstName, inMiddleName, inLastName, inLang;
-        private boolean inCoverpage, inBinary;
+        private boolean inCoverpage;
 
         private final StringBuilder bookTitle = new StringBuilder();
         private final StringBuilder firstName = new StringBuilder();
@@ -446,15 +446,10 @@ public final class Fb2Document {
         private final StringBuilder language = new StringBuilder();
         private String coverHref = null;
 
-        private String currentBinaryId = null;
-        private final StringBuilder binaryBuffer = new StringBuilder();
-        private byte[] coverBytes = null;
-        private byte[] firstBinaryBytes = null;
-
         static Metadata extract(File file) throws Exception {
             final ZipFile[] zipHolder = new ZipFile[1];
             try (InputStream raw = openStream(file, zipHolder)) {
-                BufferedInputStream buffered = new BufferedInputStream(raw);
+                BufferedInputStream buffered = new BufferedInputStream(raw, 32768);
                 buffered.mark(2048);
                 byte[] header = new byte[2048];
                 int read = buffered.read(header);
@@ -489,13 +484,79 @@ public final class Fb2Document {
                 String lang = handler.language.toString().trim();
                 if (lang.isEmpty()) lang = "ru";
 
-                byte[] cover = handler.coverBytes != null ? handler.coverBytes : handler.firstBinaryBytes;
+                byte[] cover = null;
+                if (handler.coverHref != null && !handler.coverHref.isEmpty()) {
+                    cover = scanForCoverBinary(buffered, handler.coverHref);
+                }
                 return new Metadata(title, author, lang, cover);
             } finally {
                 if (zipHolder[0] != null) {
                     try { zipHolder[0].close(); } catch (Exception ignored) { }
                 }
             }
+        }
+
+        private static byte[] scanForCoverBinary(InputStream in, String coverHref) {
+            String cleanTarget = cleanHref(coverHref).toLowerCase(Locale.ROOT);
+            byte[] firstDecoded = null;
+            try {
+                byte[] tag = "<binary".getBytes(StandardCharsets.US_ASCII);
+                int tagIdx = 0;
+                int b;
+                while ((b = in.read()) != -1) {
+                    int c = (b >= 'A' && b <= 'Z') ? (b + 32) : b;
+                    if (c == tag[tagIdx]) {
+                        tagIdx++;
+                        if (tagIdx == tag.length) {
+                            tagIdx = 0;
+                            // Found "<binary"
+                            StringBuilder attr = new StringBuilder();
+                            while ((b = in.read()) != -1) {
+                                if (b == '>') break;
+                                if (attr.length() < 256) attr.append((char) b);
+                            }
+                            String attrStr = attr.toString().toLowerCase(Locale.ROOT);
+                            boolean matches = attrStr.contains(cleanTarget);
+
+                            // Accumulate base64 content until "</binary"
+                            ByteArrayOutputStream b64 = new ByteArrayOutputStream(65536);
+                            byte[] closeTag = "</binary".getBytes(StandardCharsets.US_ASCII);
+                            int closeIdx = 0;
+                            while ((b = in.read()) != -1) {
+                                int cc = (b >= 'A' && b <= 'Z') ? (b + 32) : b;
+                                if (cc == closeTag[closeIdx]) {
+                                    closeIdx++;
+                                    if (closeIdx == closeTag.length) break;
+                                } else {
+                                    if (closeIdx > 0) {
+                                        for (int i = 0; i < closeIdx; i++) b64.write(closeTag[i]);
+                                        closeIdx = 0;
+                                    }
+                                    if (!Character.isWhitespace(b)) {
+                                        b64.write(b);
+                                    }
+                                }
+                            }
+                            byte[] decoded = null;
+                            try {
+                                decoded = Base64.getMimeDecoder().decode(b64.toByteArray());
+                            } catch (Exception ignored) { }
+
+                            if (decoded != null && decoded.length > 0) {
+                                if (matches) {
+                                    return decoded;
+                                }
+                                if (firstDecoded == null) {
+                                    firstDecoded = decoded;
+                                }
+                            }
+                        }
+                    } else {
+                        tagIdx = (c == tag[0]) ? 1 : 0;
+                    }
+                }
+            } catch (Exception ignored) { }
+            return firstDecoded;
         }
 
         @Override
@@ -529,10 +590,8 @@ public final class Fb2Document {
                 if (href != null) {
                     coverHref = cleanHref(href);
                 }
-            } else if (tag.equals("binary")) {
-                inBinary = true;
-                currentBinaryId = cleanHref(a.getValue("id"));
-                binaryBuffer.setLength(0);
+            } else if (tag.equals("body")) {
+                throw new AbortParsingException();
             }
         }
 
@@ -542,6 +601,7 @@ public final class Fb2Document {
             if (tag.equals("description")) {
                 inDescription = false;
                 inTitleInfo = false;
+                throw new AbortParsingException();
             } else if (tag.equals("title-info")) {
                 inTitleInfo = false;
             } else if (tag.equals("book-title")) {
@@ -572,22 +632,6 @@ public final class Fb2Document {
                 inLang = false;
             } else if (tag.equals("coverpage")) {
                 inCoverpage = false;
-            } else if (tag.equals("binary") && inBinary) {
-                inBinary = false;
-                try {
-                    String base64 = binaryBuffer.toString().replaceAll("\\s+", "");
-                    if (!base64.isEmpty()) {
-                        byte[] decoded = Base64.getMimeDecoder().decode(base64);
-                        if (firstBinaryBytes == null) {
-                            firstBinaryBytes = decoded;
-                        }
-                        if (coverHref != null && currentBinaryId != null &&
-                                currentBinaryId.equalsIgnoreCase(coverHref)) {
-                            coverBytes = decoded;
-                            throw new AbortParsingException();
-                        }
-                    }
-                } catch (IllegalArgumentException ignored) { }
             }
         }
 
@@ -603,8 +647,6 @@ public final class Fb2Document {
                 lastName.append(ch, start, length);
             } else if (inLang && language.length() < 16) {
                 language.append(ch, start, length);
-            } else if (inBinary) {
-                binaryBuffer.append(ch, start, length);
             }
         }
     }

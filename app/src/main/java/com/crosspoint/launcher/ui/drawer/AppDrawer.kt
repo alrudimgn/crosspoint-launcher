@@ -38,6 +38,8 @@ import com.crosspoint.launcher.ui.components.HeaderIconButton
 import com.crosspoint.launcher.ui.components.Pressable
 import com.crosspoint.launcher.ui.icons.LucideIcon
 import com.crosspoint.launcher.ui.theme.CrossPointTheme
+import com.crosspoint.launcher.util.L10n
+import com.crosspoint.launcher.util.LocalAppLanguage
 
 @Composable
 fun AppDrawer(
@@ -54,6 +56,7 @@ fun AppDrawer(
 ) {
     val colors = CrossPointTheme.colors
     val m = CrossPointTheme.metrics
+    val lang = LocalAppLanguage.current
     val topPad = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var query by remember { mutableStateOf("") }
     var appMenu by remember { mutableStateOf<AppInfo?>(null) }
@@ -63,7 +66,7 @@ fun AppDrawer(
     }
 
     Column(Modifier.fillMaxSize().imePadding().padding(top = topPad)) {
-        ScreenHeader("All Apps", onBack, titleContent = {
+        ScreenHeader(L10n.allApps(lang), onBack, titleContent = {
             BasicTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -72,7 +75,7 @@ fun AppDrawer(
                 cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.onBackground),
                 modifier = Modifier.fillMaxWidth(),
                 decorationBox = { inner ->
-                    if (query.isEmpty()) BodyText("Search apps", muted = true, size = 16)
+                    if (query.isEmpty()) BodyText(L10n.searchApps(lang), muted = true, size = 16)
                     inner()
                 }
             )
@@ -88,12 +91,12 @@ fun AppDrawer(
             ),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            items(hiddenItems.filter { query.isBlank() || it.label.contains(query, ignoreCase = true) }, key = { "menu:" + it.id }) { item ->
+            items(hiddenItems.filter { query.isBlank() || L10n.menuItem(it, lang).contains(query, ignoreCase = true) }, key = { "menu:" + it.id }) { item ->
                 Pressable(onClick = { onOpenItem(item) }, modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) { LucideIcon(item.icon, Modifier.size(24.dp)) }
                         Spacer(Modifier.width(16.dp))
-                        BodyText(item.label, weight = FontWeight.Medium, size = 17, modifier = Modifier.weight(1f))
+                        BodyText(L10n.menuItem(item, lang), weight = FontWeight.Medium, size = 17, modifier = Modifier.weight(1f))
                         Pressable(onClick = { onTogglePin("menu:${item.id}") }) { LucideIcon("pin", Modifier.padding(8.dp).size(20.dp)) }
                     }
                 }

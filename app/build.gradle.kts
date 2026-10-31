@@ -13,12 +13,10 @@ android {
         minSdk = 26
         targetSdk = 35
         testInstrumentationRunner = "com.crosspoint.launcher.IntegrationChecks"
-        // scripts/release.sh passes versionCode; local builds stay at 1 so any release can update them.
-        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 3
         versionName = rootProject.file("VERSION").readText().trim()
     }
 
-    // Release key lives outside the repo; scripts/release.sh exports these from the macOS Keychain.
     val releaseKeystore = System.getenv("CROSSPOINT_KEYSTORE")?.let(::file)
     signingConfigs {
         if (releaseKeystore != null) create("release") {

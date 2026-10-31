@@ -37,6 +37,8 @@ import com.crosspoint.launcher.ui.components.BookCover
 import com.crosspoint.launcher.ui.components.Pressable
 import com.crosspoint.launcher.ui.icons.LucideIcon
 import com.crosspoint.launcher.ui.theme.CrossPointTheme
+import com.crosspoint.launcher.util.L10n
+import com.crosspoint.launcher.util.LocalAppLanguage
 
 /* ----------------------------- LYRA: one featured cover ----------------------------- */
 
@@ -147,6 +149,7 @@ private fun ExternalReadingFeature(item: ExternalReadingState, cb: HomeCallbacks
 @Composable
 fun Lyra3CoversHome(state: HomeUiState, cb: HomeCallbacks) {
     val m = CrossPointTheme.metrics
+    val lang = LocalAppLanguage.current
     Column(Modifier.fillMaxWidth()) {
         HomeHeader(state)
         Column(
@@ -161,16 +164,27 @@ fun Lyra3CoversHome(state: HomeUiState, cb: HomeCallbacks) {
             } else if (state.externalReading != null) {
                 ExternalReadingFeature(state.externalReading, cb)
             } else {
-                val recent = state.books.take(3)
+                val recent = state.books.take(6)
                 if (recent.isEmpty()) {
                     BooksPlaceholder(state, cb)
                 } else {
-                    BodyText("Recent books", muted = true, size = 12, weight = FontWeight.Medium)
+                    BodyText(L10n.recentBooks(lang), muted = true, size = 12, weight = FontWeight.Medium)
+                    val row1 = recent.take(3)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        recent.forEach { book ->
+                        row1.forEach { book ->
                             CoverTile(book, cb, Modifier.weight(1f))
                         }
-                        repeat(3 - recent.size) { Spacer(Modifier.weight(1f)) }
+                        repeat(3 - row1.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                    if (recent.size > 3) {
+                        val row2 = recent.drop(3).take(3)
+                        Spacer(Modifier.height(8.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            row2.forEach { book ->
+                                CoverTile(book, cb, Modifier.weight(1f))
+                            }
+                            repeat(3 - row2.size) { Spacer(Modifier.weight(1f)) }
+                        }
                     }
                 }
             }
@@ -299,6 +313,7 @@ private fun CarouselCover(book: Book, focused: Boolean, cb: HomeCallbacks) {
 @Composable
 fun MinimalHome(state: HomeUiState, cb: HomeCallbacks) {
     val m = CrossPointTheme.metrics
+    val lang = LocalAppLanguage.current
     Column(Modifier.fillMaxWidth()) {
         HomeHeader(state)
         Column(
@@ -316,7 +331,7 @@ fun MinimalHome(state: HomeUiState, cb: HomeCallbacks) {
                         verticalAlignment = Alignment.CenterVertically) {
                         LucideIcon("plus", Modifier.size(24.dp))
                         Spacer(Modifier.width(16.dp))
-                        BodyText("Pin apps from the drawer", muted = true, size = 18)
+                        BodyText(L10n.pinAppsHint(lang), muted = true, size = 18)
                     }
                 }
             }
@@ -324,7 +339,7 @@ fun MinimalHome(state: HomeUiState, cb: HomeCallbacks) {
             if (!state.hasStorage) {
                 StorageHint(cb.onGrantStorage)
             } else if (state.externalReading != null) {
-                BodyText("Recent reading", muted = true, size = 12, weight = FontWeight.Medium)
+                BodyText(L10n.recentReading(lang), muted = true, size = 12, weight = FontWeight.Medium)
                 BookListRow(
                     title = state.externalReading.title,
                     author = state.externalReading.author.ifBlank { state.externalReading.source },
@@ -332,7 +347,7 @@ fun MinimalHome(state: HomeUiState, cb: HomeCallbacks) {
                     onLongPress = { cb.onOpenExternalReading(state.externalReading) }
                 )
             } else if (state.books.isNotEmpty()) {
-                BodyText("Recent books", muted = true, size = 12, weight = FontWeight.Medium)
+                BodyText(L10n.recentBooks(lang), muted = true, size = 12, weight = FontWeight.Medium)
                 state.books.take(4).forEach { book ->
                     BookListRow(
                         title = book.title,
@@ -373,6 +388,7 @@ private fun DividerLine() {
 
 @Composable
 private fun BooksPlaceholder(state: HomeUiState, cb: HomeCallbacks) {
+    val lang = LocalAppLanguage.current
     if (!state.hasStorage) {
         StorageHint(cb.onGrantStorage)
         return
@@ -387,9 +403,9 @@ private fun BooksPlaceholder(state: HomeUiState, cb: HomeCallbacks) {
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 28.dp)
         ) {
-            BodyText("No open book", weight = FontWeight.Bold, size = 20)
+            BodyText(L10n.noOpenBook(lang), weight = FontWeight.Bold, size = 20)
             Spacer(Modifier.height(6.dp))
-            BodyText("Start reading", muted = true, size = 15)
+            BodyText(L10n.startReading(lang), muted = true, size = 15)
         }
     }
 }
@@ -407,6 +423,7 @@ private fun homeCoverVisualGap() = CrossPointTheme.metrics.run {
 @Composable
 fun CompactHome(state: HomeUiState, cb: HomeCallbacks) {
     val m = CrossPointTheme.metrics
+    val lang = LocalAppLanguage.current
     Column(Modifier.fillMaxWidth()) {
         HomeHeader(state)
         Column(Modifier.weight(1f).fillMaxWidth().padding(start = 8.dp)) {
@@ -456,7 +473,7 @@ fun CompactHome(state: HomeUiState, cb: HomeCallbacks) {
             val entries = orderedHomeItems(state.menuItems, state.pinnedApps, state.settings)
             ScrollList(Modifier.weight(1f).fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = m.contentSidePadding)) {
                 items(entries) { entry ->
-                    val label = when (entry) { is LauncherColumnItem.MenuAction -> entry.item.label; is LauncherColumnItem.PinnedApp -> entry.app.label }
+                    val label = when (entry) { is LauncherColumnItem.MenuAction -> entry.label(lang); is LauncherColumnItem.PinnedApp -> entry.app.label }
                     Pressable(onClick = { when (entry) { is LauncherColumnItem.MenuAction -> cb.onMenu(entry.item); is LauncherColumnItem.PinnedApp -> cb.onLaunchApp(entry.app.packageName, entry.app.activityName) } },
                         onLongClick = { if (entry is LauncherColumnItem.PinnedApp) cb.onAppInfo(entry.app) }, modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {

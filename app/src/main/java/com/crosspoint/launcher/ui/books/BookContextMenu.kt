@@ -28,11 +28,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.crosspoint.launcher.model.AppLanguage
 import com.crosspoint.launcher.model.Book
 import com.crosspoint.launcher.ui.components.BodyText
 import com.crosspoint.launcher.ui.components.Pressable
 import com.crosspoint.launcher.ui.icons.LucideIcon
 import com.crosspoint.launcher.ui.theme.CrossPointTheme
+import com.crosspoint.launcher.util.LocalAppLanguage
 
 /**
  * Long-press context menu for a book: Open, Open with…, Rename, Delete. Rename and Delete show an
@@ -48,6 +50,8 @@ fun BookContextMenu(
     onDismiss: () -> Unit
 ) {
     val colors = CrossPointTheme.colors
+    val lang = LocalAppLanguage.current
+    val isRu = lang == AppLanguage.RUSSIAN
     var mode by remember { mutableStateOf(Mode.MENU) }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -68,17 +72,19 @@ fun BookContextMenu(
 
             when (mode) {
                 Mode.MENU -> {
-                    MenuRow("book_open", "Open") { onOpen() }
-                    MenuRow("library", "Open with…") { onOpenWith() }
-                    MenuRow("file_text", "Rename") { mode = Mode.RENAME }
-                    MenuRow("trash_2", "Delete") { mode = Mode.DELETE }
+                    MenuRow("book_open", if (isRu) "Открыть" else "Open") { onOpen() }
+                    MenuRow("library", if (isRu) "Открыть с помощью…" else "Open with…") { onOpenWith() }
+                    MenuRow("file_text", if (isRu) "Переименовать" else "Rename") { mode = Mode.RENAME }
+                    MenuRow("trash_2", if (isRu) "Удалить" else "Delete") { mode = Mode.DELETE }
                 }
                 Mode.RENAME -> RenamePanel(
                     initial = book.title,
+                    isRu = isRu,
                     onCancel = { mode = Mode.MENU },
                     onConfirm = onRename
                 )
                 Mode.DELETE -> ConfirmDeletePanel(
+                    isRu = isRu,
                     onCancel = { mode = Mode.MENU },
                     onConfirm = onDelete
                 )
@@ -104,11 +110,11 @@ private fun MenuRow(icon: String, label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun RenamePanel(initial: String, onCancel: () -> Unit, onConfirm: (String) -> Unit) {
+private fun RenamePanel(initial: String, isRu: Boolean, onCancel: () -> Unit, onConfirm: (String) -> Unit) {
     val colors = CrossPointTheme.colors
     var text by remember { mutableStateOf(initial) }
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        BodyText("New name", muted = true, size = 12, weight = FontWeight.Bold)
+        BodyText(if (isRu) "Новое название" else "New name", muted = true, size = 12, weight = FontWeight.Bold)
         Box(
             Modifier.fillMaxWidth()
                 .border(1.5.dp, colors.divider, RoundedCornerShape(6.dp))
@@ -124,21 +130,21 @@ private fun RenamePanel(initial: String, onCancel: () -> Unit, onConfirm: (Strin
             )
         }
         Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            TextButton("Cancel", onCancel)
+            TextButton(if (isRu) "Отмена" else "Cancel", onCancel)
             Spacer(Modifier.width(8.dp))
-            TextButton("Rename", { onConfirm(text) }, emphasized = true)
+            TextButton(if (isRu) "Сохранить" else "Rename", { onConfirm(text) }, emphasized = true)
         }
     }
 }
 
 @Composable
-private fun ConfirmDeletePanel(onCancel: () -> Unit, onConfirm: () -> Unit) {
+private fun ConfirmDeletePanel(isRu: Boolean, onCancel: () -> Unit, onConfirm: () -> Unit) {
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        BodyText("Delete this book permanently?", weight = FontWeight.Medium, size = 15)
+        BodyText(if (isRu) "Удалить эту книгу навсегда?" else "Delete this book permanently?", weight = FontWeight.Medium, size = 15)
         Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            TextButton("Cancel", onCancel)
+            TextButton(if (isRu) "Отмена" else "Cancel", onCancel)
             Spacer(Modifier.width(8.dp))
-            TextButton("Delete", onConfirm, emphasized = true)
+            TextButton(if (isRu) "Удалить" else "Delete", onConfirm, emphasized = true)
         }
     }
 }

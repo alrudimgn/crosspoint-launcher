@@ -49,6 +49,8 @@ import com.crosspoint.launcher.ui.components.LauncherAppIcon
 import com.crosspoint.launcher.ui.components.Pressable
 import com.crosspoint.launcher.ui.icons.LucideIcon
 import com.crosspoint.launcher.ui.theme.CrossPointTheme
+import com.crosspoint.launcher.util.L10n
+import com.crosspoint.launcher.util.LocalAppLanguage
 
 /**
  * Full-screen app search with optional automatic keyboard display. When [autoOpenSingleResult] is on and the query narrows to exactly one app, it
@@ -67,6 +69,7 @@ fun SearchScreen(
 ) {
     val colors = CrossPointTheme.colors
     val m = CrossPointTheme.metrics
+    val lang = LocalAppLanguage.current
     val topPad = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -80,8 +83,8 @@ fun SearchScreen(
             }.thenBy { it.label.lowercase() })
     }
 
-    val items = remember(hiddenItems, query) {
-        hiddenItems.filter { query.isBlank() || it.label.contains(query.trim(), ignoreCase = true) }
+    val items = remember(hiddenItems, query, lang) {
+        hiddenItems.filter { query.isBlank() || L10n.menuItem(it, lang).contains(query.trim(), ignoreCase = true) }
     }
 
     fun open(item: com.crosspoint.launcher.model.HomeMenuItem) {
@@ -116,7 +119,7 @@ fun SearchScreen(
             .padding(top = topPad)
             .imePadding()
     ) {
-        ScreenHeader("Search Apps", onClose, titleContent = {
+        ScreenHeader(L10n.searchApps(lang), onClose, titleContent = {
             BasicTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -131,7 +134,7 @@ fun SearchScreen(
                     .fillMaxWidth()
                     .focusRequester(focus),
                 decorationBox = { inner ->
-                    if (query.isEmpty()) BodyText("Search apps", muted = true, size = 18)
+                    if (query.isEmpty()) BodyText(L10n.searchApps(lang), muted = true, size = 18)
                     inner()
                 }
             )
@@ -147,11 +150,11 @@ fun SearchScreen(
             items(items, key = { "menu:" + it.id }) { item ->
                 Pressable(onClick = { open(item) }, modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.foundation.layout.Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
-                            com.crosspoint.launcher.ui.icons.LucideIcon(item.icon, Modifier.size(24.dp))
+                        Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                            LucideIcon(item.icon, Modifier.size(24.dp))
                         }
                         Spacer(Modifier.width(16.dp))
-                        BodyText(item.label, weight = FontWeight.Medium, size = 17)
+                        BodyText(L10n.menuItem(item, lang), weight = FontWeight.Medium, size = 17)
                     }
                 }
             }

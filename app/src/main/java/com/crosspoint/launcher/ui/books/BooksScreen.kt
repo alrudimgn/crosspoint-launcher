@@ -31,6 +31,8 @@ import com.crosspoint.launcher.ui.components.Pressable
 import com.crosspoint.launcher.ui.home.StorageHint
 import com.crosspoint.launcher.ui.home.rememberCover
 import com.crosspoint.launcher.ui.theme.CrossPointTheme
+import com.crosspoint.launcher.util.L10n
+import com.crosspoint.launcher.util.LocalAppLanguage
 
 @Composable
 fun BooksScreen(
@@ -46,6 +48,7 @@ fun BooksScreen(
     title: String = "Library"
 ) {
     val m = CrossPointTheme.metrics
+    val lang = LocalAppLanguage.current
     val topPad = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Column(Modifier.fillMaxSize().padding(top = topPad)) {
         ScreenHeader(title, onBack) {
@@ -56,7 +59,7 @@ fun BooksScreen(
         when {
             !hasStorage -> Box(Modifier.padding(m.contentSidePadding)) { StorageHint(onGrantStorage) }
             books.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                BodyText(if (loading) "Scanning…" else "No books found", muted = true, size = 15)
+                BodyText(if (loading) L10n.scanning(lang) else L10n.noBooksFound(lang), muted = true, size = 15)
             }
             else -> ScrollList(
                 Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = m.contentSidePadding, vertical = 8.dp)

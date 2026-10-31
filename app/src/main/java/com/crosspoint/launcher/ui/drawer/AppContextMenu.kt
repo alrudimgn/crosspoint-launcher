@@ -20,11 +20,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.crosspoint.launcher.model.AppInfo
+import com.crosspoint.launcher.model.AppLanguage
 import com.crosspoint.launcher.ui.components.AppIcon
 import com.crosspoint.launcher.ui.components.BodyText
 import com.crosspoint.launcher.ui.components.Pressable
 import com.crosspoint.launcher.ui.icons.LucideIcon
 import com.crosspoint.launcher.ui.theme.CrossPointTheme
+import com.crosspoint.launcher.util.LocalAppLanguage
 
 @Composable
 fun AppContextMenu(
@@ -35,6 +37,8 @@ fun AppContextMenu(
     onDismiss: () -> Unit
 ) {
     val colors = CrossPointTheme.colors
+    val lang = LocalAppLanguage.current
+    val isRu = lang == AppLanguage.RUSSIAN
     Dialog(onDismissRequest = onDismiss) {
         Column(
             Modifier
@@ -53,11 +57,16 @@ fun AppContextMenu(
                 BodyText(app.label, weight = FontWeight.Bold, size = 16, maxLines = 2)
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
-            MenuRow(if (pinned) "pin_off" else "pin", if (pinned) "Unpin" else "Pin") {
+            val pinText = if (isRu) {
+                if (pinned) "Открепить от рабочего стола" else "Закрепить на рабочем столе"
+            } else {
+                if (pinned) "Unpin" else "Pin"
+            }
+            MenuRow(if (pinned) "pin_off" else "pin", pinText) {
                 onTogglePin()
                 onDismiss()
             }
-            MenuRow("info", "App info") {
+            MenuRow("info", if (isRu) "О приложении" else "App info") {
                 onAppInfo()
                 onDismiss()
             }

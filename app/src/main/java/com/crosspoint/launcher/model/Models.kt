@@ -2,6 +2,16 @@ package com.crosspoint.launcher.model
 
 import androidx.compose.ui.graphics.ImageBitmap
 
+/** In-app language selection. */
+enum class AppLanguage(val id: String, val label: String) {
+    RUSSIAN("ru", "Русский"),
+    ENGLISH("en", "English");
+
+    companion object {
+        fun from(id: String?): AppLanguage = entries.firstOrNull { it.id == id } ?: RUSSIAN
+    }
+}
+
 /** Visual layout themes, mirroring the CrossPoint reader "Lyra" family plus two new ones. */
 enum class ThemeType(val id: String, val label: String, val description: String) {
     LYRA("lyra", "Lyra", "One featured cover with a two-column icon menu"),

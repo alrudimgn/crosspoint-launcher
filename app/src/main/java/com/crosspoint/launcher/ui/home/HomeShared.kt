@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.crosspoint.launcher.model.AppInfo
+import com.crosspoint.launcher.model.AppLanguage
 import com.crosspoint.launcher.model.HomeMenuItem
 import com.crosspoint.launcher.ui.components.key
 import com.crosspoint.launcher.ui.components.BodyText
@@ -35,6 +36,8 @@ import com.crosspoint.launcher.ui.components.LyraHeader
 import com.crosspoint.launcher.ui.components.Pressable
 import com.crosspoint.launcher.ui.icons.LucideIcon
 import com.crosspoint.launcher.ui.theme.CrossPointTheme
+import com.crosspoint.launcher.util.L10n
+import com.crosspoint.launcher.util.LocalAppLanguage
 import com.crosspoint.launcher.util.Launching
 
 sealed class LauncherColumnItem {
@@ -43,6 +46,10 @@ sealed class LauncherColumnItem {
     val key: String get() = when (this) {
         is MenuAction -> "menu:${item.id}"
         is PinnedApp -> app.key
+    }
+    fun label(lang: AppLanguage): String = when (this) {
+        is MenuAction -> L10n.menuItem(item, lang)
+        is PinnedApp -> app.label
     }
     val label: String get() = when (this) {
         is MenuAction -> item.label
@@ -96,6 +103,7 @@ fun MenuGrid(items: List<HomeMenuItem>, onMenu: (HomeMenuItem) -> Unit, modifier
 @Composable
 fun MenuButton(item: HomeMenuItem, onMenu: (HomeMenuItem) -> Unit, modifier: Modifier = Modifier) {
     val m = CrossPointTheme.metrics
+    val lang = LocalAppLanguage.current
     Pressable(onClick = { onMenu(item) }, modifier = modifier.wrapContentWidth()) {
         Row(
             Modifier
@@ -105,7 +113,7 @@ fun MenuButton(item: HomeMenuItem, onMenu: (HomeMenuItem) -> Unit, modifier: Mod
         ) {
             LucideIcon(item.icon, Modifier.size(m.menuIconSize))
             Spacer(Modifier.width(14.dp))
-            BodyText(item.label, weight = FontWeight.SemiBold, size = 16)
+            BodyText(L10n.menuItem(item, lang), weight = FontWeight.SemiBold, size = 16)
         }
     }
 }
@@ -131,7 +139,7 @@ fun PinnedAppsGrid(
     modifier: Modifier = Modifier
 ) {
     TwoColumnLauncherList(
-        items = apps.take(12),
+        items = apps.take(com.crosspoint.launcher.data.LauncherSettings.MAX_HOME_ITEMS),
         modifier = modifier,
         verticalSpacing = 2.dp
     ) { app ->
@@ -190,8 +198,9 @@ private fun <T> TwoColumnLauncherList(
     verticalSpacing: androidx.compose.ui.unit.Dp,
     itemContent: @Composable (T) -> Unit
 ) {
-    val left = items.take(6)
-    val right = items.drop(6).take(6)
+    val half = (items.size + 1) / 2
+    val left = items.take(half)
+    val right = items.drop(half)
     BoxWithConstraints(modifier) {
         val columnGap = (maxWidth * 0.18f).coerceIn(32.dp, 140.dp)
         Row(
@@ -212,6 +221,7 @@ private fun <T> TwoColumnLauncherList(
 
 @Composable
 private fun MenuListButton(item: HomeMenuItem, onMenu: (HomeMenuItem) -> Unit) {
+    val lang = LocalAppLanguage.current
     Pressable(onClick = { onMenu(item) }, modifier = Modifier.wrapContentWidth()) {
         Row(
             Modifier
@@ -221,7 +231,7 @@ private fun MenuListButton(item: HomeMenuItem, onMenu: (HomeMenuItem) -> Unit) {
         ) {
             LucideIcon(item.icon, Modifier.size(22.dp))
             Spacer(Modifier.width(16.dp))
-            BodyText(item.label, weight = FontWeight.Medium, size = 19)
+            BodyText(L10n.menuItem(item, lang), weight = FontWeight.Medium, size = 19)
         }
     }
 }
@@ -290,6 +300,7 @@ fun BookListRow(
 @Composable
 fun DefaultHomeBanner(onSet: () -> Unit, onDismiss: () -> Unit) {
     val colors = CrossPointTheme.colors
+    val lang = LocalAppLanguage.current
     val statusPad = WindowInsets.statusBars.asPaddingValues()
     Row(
         Modifier
@@ -300,15 +311,15 @@ fun DefaultHomeBanner(onSet: () -> Unit, onDismiss: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            BodyText("Set CrossPoint as your home app", weight = FontWeight.SemiBold, size = 14,
+            BodyText(L10n.setAsDefaultHome(lang), weight = FontWeight.SemiBold, size = 14,
                 color = colors.background)
-            BodyText("Tap Set to make it your default launcher", size = 12, color = colors.background)
+            BodyText(L10n.setAsDefaultDesc(lang), size = 12, color = colors.background)
         }
         Pressable(onClick = onSet) {
             Box(
                 Modifier.padding(start = 8.dp).background(colors.background)
                     .padding(horizontal = 14.dp, vertical = 8.dp)
-            ) { BodyText("Set", weight = FontWeight.Bold, size = 14, color = colors.onBackground) }
+            ) { BodyText(L10n.setButton(lang), weight = FontWeight.Bold, size = 14, color = colors.onBackground) }
         }
         Spacer(Modifier.width(4.dp))
         Pressable(onClick = onDismiss) {
@@ -320,6 +331,7 @@ fun DefaultHomeBanner(onSet: () -> Unit, onDismiss: () -> Unit) {
 /** Prompt shown when storage access hasn't been granted yet. */
 @Composable
 fun StorageHint(onGrant: () -> Unit, modifier: Modifier = Modifier) {
+    val lang = LocalAppLanguage.current
     Pressable(onClick = onGrant, modifier = modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
@@ -328,8 +340,8 @@ fun StorageHint(onGrant: () -> Unit, modifier: Modifier = Modifier) {
             LucideIcon("folder_open", Modifier.size(22.dp))
             Spacer(Modifier.width(12.dp))
             Column {
-                BodyText("Grant storage access", weight = FontWeight.SemiBold, size = 15)
-                BodyText("Allow file access to scan your EPUB library", muted = true, size = 12)
+                BodyText(L10n.grantStorage(lang), weight = FontWeight.SemiBold, size = 15)
+                BodyText(L10n.storageHint(lang), muted = true, size = 12)
             }
         }
     }

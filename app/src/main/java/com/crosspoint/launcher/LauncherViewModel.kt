@@ -20,6 +20,7 @@ import com.crosspoint.launcher.data.ExternalReadingRepository
 import com.crosspoint.launcher.data.LauncherSettings
 import com.crosspoint.launcher.data.SettingsRepository
 import com.crosspoint.launcher.model.AppInfo
+import com.crosspoint.launcher.model.AppLanguage
 import com.crosspoint.launcher.model.AppearanceMode
 import com.crosspoint.launcher.model.Book
 import com.crosspoint.launcher.model.CoverSlotMode
@@ -27,6 +28,7 @@ import com.crosspoint.launcher.model.ExternalReadingState
 import com.crosspoint.launcher.model.HomeMenuItem
 import com.crosspoint.launcher.model.LauncherIconStyle
 import com.crosspoint.launcher.model.ThemeType
+import com.crosspoint.launcher.util.L10n
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -89,8 +91,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private val _hasStorage = MutableStateFlow(hasStoragePermission())
     val hasStorage: StateFlow<Boolean> = _hasStorage.asStateFlow()
 
-    private val timeFmt = SimpleDateFormat("h:mm", Locale.getDefault())
-    private val dateFmt = SimpleDateFormat("EEE, MMM d", Locale.getDefault())
     private var kindleObserver: FileObserver? = null
     private var kindleWarmJob: Job? = null
     private var booksJob: Job? = null
@@ -158,9 +158,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         val bm = ctx.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
         val pct = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).coerceIn(0, 100)
         val charging = bm.isCharging
+        val isRu = settings.value.language == AppLanguage.RUSSIAN
+        val locale = if (isRu) Locale("ru") else Locale.getDefault()
+        val dFmt = SimpleDateFormat("EEE, d MMM", locale)
+        val tFmt = SimpleDateFormat("H:mm", locale)
+        val rawDate = dFmt.format(now)
+        val formattedDate = rawDate.replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
         _system.value = SystemState(
-            clock = timeFmt.format(now),
-            date = dateFmt.format(now),
+            clock = tFmt.format(now),
+            date = formattedDate,
             batteryPct = if (pct == 0) 100 else pct,
             charging = charging,
             wifiConnected = isWifiConnected()
@@ -243,10 +249,20 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         booksJob = viewModelScope.launch {
             _booksLoading.value = true
             try {
-                _books.value = scanner.scan(settings.value.bookFolders)
+                val finalBooks = scanner.scan(
+                    settings.value.bookFolders,
+                    settings.value.libraryFolder
+                ) { batch ->
+                    _books.value = batch
+                }
+                _books.value = finalBooks
                 if (syncRepo.connected) fetchMissingCovers()
             } finally { _booksLoading.value = false }
         }
+    }
+
+    fun cachedBook(path: String): Book? {
+        return runCatching { scanner.cachedParsePublic(java.io.File(path)) }.getOrNull()
     }
 
     fun onStoragePermissionMaybeChanged() {
@@ -303,13 +319,21 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     // --- settings mutations ---
     fun setTheme(t: ThemeType) = viewModelScope.launch { settingsRepo.setTheme(t) }
     fun setAppearance(a: AppearanceMode) = viewModelScope.launch { settingsRepo.setAppearance(a) }
+    fun setLanguage(lang: AppLanguage) = viewModelScope.launch {
+        settingsRepo.setLanguage(lang)
+        refreshSystem()
+    }
     fun setDefaultReader(pkg: String?) = viewModelScope.launch { settingsRepo.setDefaultReader(pkg) }
+    fun setLibraryFolder(folder: String) = viewModelScope.launch {
+        settingsRepo.setLibraryFolder(folder)
+        refreshBooks()
+    }
     fun togglePinned(entry: String) = viewModelScope.launch {
         val current = settings.value
         val selected = current.orderedHomeKeys(current.effectiveHomeMenu(opdsServers.value.isNotEmpty()),
             pinnedAppInfos(current, apps.value).map { "${it.packageName}/${it.activityName}" })
         if (entry !in selected && selected.size >= LauncherSettings.MAX_HOME_ITEMS) {
-            android.widget.Toast.makeText(getApplication(), "Home can show up to 5 items", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(getApplication(), L10n.homeItemsLimit(current.language, LauncherSettings.MAX_HOME_ITEMS), android.widget.Toast.LENGTH_SHORT).show()
         } else settingsRepo.setHomeItems(if (entry in selected) selected - entry else selected + entry)
     }
     fun setHomeItems(entries: List<String>) = viewModelScope.launch { settingsRepo.setHomeItems(entries) }

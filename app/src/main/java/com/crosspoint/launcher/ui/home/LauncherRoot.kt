@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -34,6 +35,8 @@ import com.crosspoint.launcher.ui.search.SearchScreen
 import com.crosspoint.launcher.ui.settings.SettingsScreen
 import com.crosspoint.launcher.ui.theme.CrossPointTheme
 import com.crosspoint.launcher.ui.transfer.TransferScreen
+import com.crosspoint.launcher.util.L10n
+import com.crosspoint.launcher.util.LocalAppLanguage
 import com.crosspoint.launcher.util.Launching
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
@@ -90,7 +93,7 @@ fun LauncherRoot(
             HomeMenuItem.APPS -> screen = Screen.DRAWER
             HomeMenuItem.SETTINGS -> screen = Screen.SETTINGS
             HomeMenuItem.BROWSE_BOOKS, HomeMenuItem.RECENT_BOOKS -> {
-                booksTitle = if (item == HomeMenuItem.RECENT_BOOKS) "Recent Books" else "Library"
+                booksTitle = if (item == HomeMenuItem.RECENT_BOOKS) L10n.recentBooks(settings.language) else L10n.library(settings.language)
                 screen = Screen.BOOKS
             }
             HomeMenuItem.OPDS_BROWSER -> screen = Screen.OPDS
@@ -99,6 +102,23 @@ fun LauncherRoot(
     }
 
     val effectiveMenu = settings.effectiveHomeMenu(opdsServers.isNotEmpty())
+
+    val orderedBooks = remember(books, settings.lastOpenedBookPath) {
+        val lastPath = settings.lastOpenedBookPath
+        if (!lastPath.isNullOrBlank()) {
+            val existing = books.firstOrNull { it.filePath == lastPath }
+            if (existing != null) {
+                listOf(existing) + books.filter { it.filePath != lastPath }
+            } else if (java.io.File(lastPath).isFile) {
+                val resolved = vm.cachedBook(lastPath)
+                if (resolved != null) listOf(resolved) + books else books
+            } else {
+                books
+            }
+        } else {
+            books
+        }
+    }
 
     val openBook: (String) -> Unit = { path ->
         vm.markBookOpened(path)
@@ -177,129 +197,127 @@ fun LauncherRoot(
             }
         ) { change, amount -> change.consume(); horizontalDrag += amount }
     } else Modifier
-    Box(Modifier.fillMaxSize().background(colors.background).then(statsSwipe)) {
-        when (screen) {
-            Screen.STATS -> com.crosspoint.launcher.ui.stats.StatsScreen(onBack = { screen = Screen.HOME })
-            Screen.HOME -> androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().then(homeGestureModifier)) {
-              if (!isDefaultHome && !bannerDismissed) {
-                DefaultHomeBanner(
-                    onSet = onRequestDefaultHome,
-                    onDismiss = { bannerDismissed = true }
-                )
-              }
-              Box(
-                  Modifier
-                      .fillMaxSize()
-              ) {
-                val pinned = vm.pinnedAppInfos(settings, apps)
-                val hasLastOpenedBook = books.any { it.filePath == settings.lastOpenedBookPath }
-                val localBookOpenedAt = if (hasLastOpenedBook) settings.lastOpenedBookAt else 0L
-                val orderedBooks = if (hasLastOpenedBook) {
-                    books.sortedByDescending { if (it.filePath == settings.lastOpenedBookPath) Long.MAX_VALUE else it.lastModified }
-                } else {
-                    books
-                }
-                val visibleExternalReading = externalReading
-                    ?.takeIf { localBookOpenedAt <= 0L || it.updatedAt >= localBookOpenedAt }
-                val state = HomeUiState(
-                    settings = settings,
-                    menuItems = effectiveMenu,
-                    books = orderedBooks,
-                    externalReading = visibleExternalReading,
-                    pinnedApps = pinned,
-                    system = system,
-                    hasStorage = hasStorage,
-                    booksLoading = booksLoading
-                )
-                val callbacks = HomeCallbacks(
-                    onMenu = onMenu,
-                    onOpenBook = openBook,
-                    onOpenBookChooser = openBookChooser,
-                    onBookLongPress = { bookMenu = it },
-                    onLaunchApp = launchApp,
-                    onOpenExternalReading = { vm.launchExternalReading(it) },
-                    onAppInfo = { Launching.openAppInfo(context, it.packageName) },
-                    onOpenDrawer = { screen = Screen.DRAWER },
-                    onOpenSettings = { screen = Screen.SETTINGS },
-                    onPickWidget = onPickWidget,
-                    onGrantStorage = { Launching.openManageStorageSettings(context) },
-                    onRefreshBooks = { vm.refreshBooks() }
-                )
-                if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 600) CompactHome(state, callbacks) else when (settings.theme) {
-                    ThemeType.LYRA -> LyraHome(state, callbacks)
-                    ThemeType.LYRA_3_COVERS -> Lyra3CoversHome(state, callbacks)
-                    ThemeType.CAROUSEL -> CarouselHome(state, callbacks)
-                    ThemeType.MINIMAL -> MinimalHome(state, callbacks)
-                }
-              }
-            }
-            Screen.DRAWER -> AppDrawer(
-                apps = apps,
-                hiddenItems = HomeMenuItem.entries.filter { it != HomeMenuItem.APPS && it !in effectiveMenu },
-                onOpenItem = onMenu,
-                pinnedKeys = settings.orderedHomeKeys(effectiveMenu,
-                    vm.pinnedAppInfos(settings, apps).map { "${it.packageName}/${it.activityName}" }).toSet(),
-                onLaunch = launchApp,
-                onTogglePin = { vm.togglePinned(it) },
-                onAppInfo = { Launching.openAppInfo(context, it) },
-                onOpenSettings = { screen = Screen.SETTINGS },
-                onBack = { screen = Screen.HOME }
-            )
-            Screen.SETTINGS -> SettingsScreen(
-                vm = vm,
-                onOpenOpdsServers = { screen = Screen.OPDS_SERVERS },
-                onPickWidget = onPickWidget,
-                onClearWidget = { vm.clearCoverWidget() },
-                onBack = { screen = Screen.HOME }
-            )
-            Screen.OPDS_SERVERS -> OpdsServersScreen(
-                servers = opdsServers,
-                onSave = { vm.upsertOpdsServer(it) },
-                onDelete = { vm.deleteOpdsServer(it) },
-                onBack = { screen = Screen.SETTINGS }
-            )
-            Screen.OPDS -> OpdsBrowserScreen(
-                servers = opdsServers,
-                repo = vm.opdsRepo,
-                onBooksChanged = { vm.refreshBooks() },
-                onBack = { screen = Screen.HOME }
-            )
-            Screen.TRANSFER -> TransferScreen(
-                onBooksChanged = { vm.refreshBooks() },
-                onBack = { screen = Screen.HOME }
-            )
-            Screen.BOOKS -> BooksScreen(
-                title = booksTitle,
-                books = books,
-                loading = booksLoading,
-                hasStorage = hasStorage,
-                onOpen = openBook,
-                onOpenChooser = openBookChooser,
-                onBookLongPress = { bookMenu = it },
-                onGrantStorage = { Launching.openManageStorageSettings(context) },
-                onRefresh = { vm.refreshBooks() },
-                onBack = { screen = Screen.HOME }
-            )
-            Screen.SEARCH -> SearchScreen(
-                apps = apps,
-                settings = settings,
-                autoOpenSingleResult = settings.autoOpenSingleResult,
-                onLaunch = launchApp,
-                onClose = { screen = Screen.HOME },
-                hiddenItems = HomeMenuItem.entries.filter { it != HomeMenuItem.APPS && it !in effectiveMenu },
-                onOpenItem = onMenu
-            )
-        }
 
-        bookMenu?.let { book ->
-            com.crosspoint.launcher.ui.books.BookContextMenu(
-                book = book,
-                onOpen = { openBook(book.filePath); bookMenu = null },
-                onOpenWith = { openBookChooser(book.filePath); bookMenu = null },
-                onRename = { newName -> vm.renameBook(book.filePath, newName); bookMenu = null },
-                onDelete = { vm.deleteBook(book.filePath); bookMenu = null },
-                onDismiss = { bookMenu = null }
-            )
+    CompositionLocalProvider(LocalAppLanguage provides settings.language) {
+        Box(Modifier.fillMaxSize().background(colors.background).then(statsSwipe)) {
+            when (screen) {
+                Screen.STATS -> com.crosspoint.launcher.ui.stats.StatsScreen(onBack = { screen = Screen.HOME })
+                Screen.HOME -> androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().then(homeGestureModifier)) {
+                  if (!isDefaultHome && !bannerDismissed) {
+                    DefaultHomeBanner(
+                        onSet = onRequestDefaultHome,
+                        onDismiss = { bannerDismissed = true }
+                    )
+                  }
+                  Box(
+                      Modifier
+                          .fillMaxSize()
+                  ) {
+                    val pinned = vm.pinnedAppInfos(settings, apps)
+                    val hasLastOpenedBook = !settings.lastOpenedBookPath.isNullOrBlank() && orderedBooks.any { it.filePath == settings.lastOpenedBookPath }
+                    val localBookOpenedAt = if (hasLastOpenedBook) settings.lastOpenedBookAt else 0L
+                    val visibleExternalReading = externalReading
+                        ?.takeIf { localBookOpenedAt <= 0L || it.updatedAt >= localBookOpenedAt }
+                    val state = HomeUiState(
+                        settings = settings,
+                        menuItems = effectiveMenu,
+                        books = orderedBooks,
+                        externalReading = visibleExternalReading,
+                        pinnedApps = pinned,
+                        system = system,
+                        hasStorage = hasStorage,
+                        booksLoading = booksLoading
+                    )
+                    val callbacks = HomeCallbacks(
+                        onMenu = onMenu,
+                        onOpenBook = openBook,
+                        onOpenBookChooser = openBookChooser,
+                        onBookLongPress = { bookMenu = it },
+                        onLaunchApp = launchApp,
+                        onOpenExternalReading = { vm.launchExternalReading(it) },
+                        onAppInfo = { Launching.openAppInfo(context, it.packageName) },
+                        onOpenDrawer = { screen = Screen.DRAWER },
+                        onOpenSettings = { screen = Screen.SETTINGS },
+                        onPickWidget = onPickWidget,
+                        onGrantStorage = { Launching.openManageStorageSettings(context) },
+                        onRefreshBooks = { vm.refreshBooks() }
+                    )
+                    if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 600) CompactHome(state, callbacks) else when (settings.theme) {
+                        ThemeType.LYRA -> LyraHome(state, callbacks)
+                        ThemeType.LYRA_3_COVERS -> Lyra3CoversHome(state, callbacks)
+                        ThemeType.CAROUSEL -> CarouselHome(state, callbacks)
+                        ThemeType.MINIMAL -> MinimalHome(state, callbacks)
+                    }
+                  }
+                }
+                Screen.DRAWER -> AppDrawer(
+                    apps = apps,
+                    hiddenItems = HomeMenuItem.entries.filter { it != HomeMenuItem.APPS && it !in effectiveMenu },
+                    onOpenItem = onMenu,
+                    pinnedKeys = settings.orderedHomeKeys(effectiveMenu,
+                        vm.pinnedAppInfos(settings, apps).map { "${it.packageName}/${it.activityName}" }).toSet(),
+                    onLaunch = launchApp,
+                    onTogglePin = { vm.togglePinned(it) },
+                    onAppInfo = { Launching.openAppInfo(context, it) },
+                    onOpenSettings = { screen = Screen.SETTINGS },
+                    onBack = { screen = Screen.HOME }
+                )
+                Screen.SETTINGS -> SettingsScreen(
+                    vm = vm,
+                    onOpenOpdsServers = { screen = Screen.OPDS_SERVERS },
+                    onPickWidget = onPickWidget,
+                    onClearWidget = { vm.clearCoverWidget() },
+                    onBack = { screen = Screen.HOME }
+                )
+                Screen.OPDS_SERVERS -> OpdsServersScreen(
+                    servers = opdsServers,
+                    onSave = { vm.upsertOpdsServer(it) },
+                    onDelete = { vm.deleteOpdsServer(it) },
+                    onBack = { screen = Screen.SETTINGS }
+                )
+                Screen.OPDS -> OpdsBrowserScreen(
+                    servers = opdsServers,
+                    repo = vm.opdsRepo,
+                    onBooksChanged = { vm.refreshBooks() },
+                    onBack = { screen = Screen.HOME }
+                )
+                Screen.TRANSFER -> TransferScreen(
+                    onBooksChanged = { vm.refreshBooks() },
+                    onBack = { screen = Screen.HOME }
+                )
+                Screen.BOOKS -> BooksScreen(
+                    title = booksTitle,
+                    books = if (booksTitle == L10n.recentBooks(settings.language)) orderedBooks else books,
+                    loading = booksLoading,
+                    hasStorage = hasStorage,
+                    onOpen = openBook,
+                    onOpenChooser = openBookChooser,
+                    onBookLongPress = { bookMenu = it },
+                    onGrantStorage = { Launching.openManageStorageSettings(context) },
+                    onRefresh = { vm.refreshBooks() },
+                    onBack = { screen = Screen.HOME }
+                )
+                Screen.SEARCH -> SearchScreen(
+                    apps = apps,
+                    settings = settings,
+                    autoOpenSingleResult = settings.autoOpenSingleResult,
+                    onLaunch = launchApp,
+                    onClose = { screen = Screen.HOME },
+                    hiddenItems = HomeMenuItem.entries.filter { it != HomeMenuItem.APPS && it !in effectiveMenu },
+                    onOpenItem = onMenu
+                )
+            }
+
+            bookMenu?.let { book ->
+                com.crosspoint.launcher.ui.books.BookContextMenu(
+                    book = book,
+                    onOpen = { openBook(book.filePath); bookMenu = null },
+                    onOpenWith = { openBookChooser(book.filePath); bookMenu = null },
+                    onRename = { newName -> vm.renameBook(book.filePath, newName); bookMenu = null },
+                    onDelete = { vm.deleteBook(book.filePath); bookMenu = null },
+                    onDismiss = { bookMenu = null }
+                )
+            }
         }
     }
 }

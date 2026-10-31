@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import com.crosspoint.launcher.model.AppLanguage
 import com.crosspoint.launcher.model.AppearanceMode
 import com.crosspoint.launcher.model.CoverSlotMode
 import com.crosspoint.launcher.model.SleepScreenMode
@@ -21,10 +23,12 @@ import org.json.JSONObject
 data class LauncherSettings(
     val theme: ThemeType = ThemeType.LYRA,
     val appearance: AppearanceMode = AppearanceMode.LIGHT,
+    val language: AppLanguage = AppLanguage.RUSSIAN,
     val defaultReaderPackage: String? = null,
     val pinnedApps: List<String> = emptyList(),          // "package/activity" entries
     val homeMenuItems: List<HomeMenuItem> = DEFAULT_MENU,
     val homeItemOrder: List<String>? = null,
+    val libraryFolder: String = "",                      // root library folder
     val bookFolders: List<String> = emptyList(),         // extra custom scan folders
     val searchGesture: SearchGesture = SearchGesture.SWIPE_UP,
     val autoOpenSingleResult: Boolean = true,
@@ -57,7 +61,7 @@ data class LauncherSettings(
     }
 
     companion object {
-        const val MAX_HOME_ITEMS = 5
+        const val MAX_HOME_ITEMS = 14
         val DEFAULT_MENU = listOf(
             HomeMenuItem.BROWSE_BOOKS,
             HomeMenuItem.RECENT_BOOKS,
@@ -72,11 +76,13 @@ class SettingsRepository(private val context: Context) {
     private object Keys {
         val THEME = stringPreferencesKey("theme")
         val APPEARANCE = stringPreferencesKey("appearance")
+        val LANGUAGE = stringPreferencesKey("app_language")
         val DEFAULT_READER = stringPreferencesKey("default_reader")
         val PINNED = stringSetPreferencesKey("pinned_apps")          // unordered set
         val PINNED_ORDER = stringPreferencesKey("pinned_order")      // ordered csv
         val MENU = stringPreferencesKey("home_menu")                 // ordered csv of ids
         val HOME_ORDER = stringPreferencesKey("home_item_order")
+        val LIBRARY_FOLDER = stringPreferencesKey("library_folder")
         val FOLDERS = stringSetPreferencesKey("book_folders")
         val SEARCH_GESTURE = stringPreferencesKey("search_gesture")
         val AUTO_OPEN_SINGLE = booleanPreferencesKey("auto_open_single")
@@ -94,7 +100,7 @@ class SettingsRepository(private val context: Context) {
         val SLEEP_COVER_APPLIED = stringPreferencesKey("sleep_cover_applied")
         val COVER_WIDGET_ID = intPreferencesKey("cover_widget_id")
         val LAST_OPENED_BOOK_PATH = stringPreferencesKey("last_opened_book_path")
-        val LAST_OPENED_BOOK_AT = androidx.datastore.preferences.core.longPreferencesKey("last_opened_book_at")
+        val LAST_OPENED_BOOK_AT = longPreferencesKey("last_opened_book_at")
     }
 
     val settings: Flow<LauncherSettings> = context.launcherDataStore.data.map { p ->
@@ -109,10 +115,12 @@ class SettingsRepository(private val context: Context) {
         LauncherSettings(
             theme = ThemeType.from(p[Keys.THEME]),
             appearance = AppearanceMode.from(p[Keys.APPEARANCE]),
+            language = AppLanguage.from(p[Keys.LANGUAGE]),
             defaultReaderPackage = p[Keys.DEFAULT_READER],
             pinnedApps = pinned,
             homeMenuItems = menu,
             homeItemOrder = p[Keys.HOME_ORDER]?.split("\n")?.filter { it.isNotBlank() },
+            libraryFolder = p[Keys.LIBRARY_FOLDER].orEmpty(),
             bookFolders = (p[Keys.FOLDERS] ?: emptySet()).toList(),
             searchGesture = SearchGesture.from(p[Keys.SEARCH_GESTURE]),
             autoOpenSingleResult = p[Keys.AUTO_OPEN_SINGLE] ?: true,
@@ -139,6 +147,9 @@ class SettingsRepository(private val context: Context) {
     suspend fun setAppearance(a: AppearanceMode) =
         context.launcherDataStore.edit { it[Keys.APPEARANCE] = a.id }
 
+    suspend fun setLanguage(lang: AppLanguage) =
+        context.launcherDataStore.edit { it[Keys.LANGUAGE] = lang.id }
+
     suspend fun setDefaultReader(pkg: String?) = context.launcherDataStore.edit {
         if (pkg == null) it.remove(Keys.DEFAULT_READER) else it[Keys.DEFAULT_READER] = pkg
     }
@@ -151,6 +162,10 @@ class SettingsRepository(private val context: Context) {
             .mapNotNull { HomeMenuItem.from(it.removePrefix("menu:")) }.joinToString(",") { it.id }
         p[Keys.PINNED_ORDER] = apps.joinToString("\n")
         p[Keys.PINNED] = apps.toSet()
+    }
+
+    suspend fun setLibraryFolder(folder: String) = context.launcherDataStore.edit {
+        if (folder.isBlank()) it.remove(Keys.LIBRARY_FOLDER) else it[Keys.LIBRARY_FOLDER] = folder.trim()
     }
 
     suspend fun setBookFolders(folders: List<String>) = context.launcherDataStore.edit {

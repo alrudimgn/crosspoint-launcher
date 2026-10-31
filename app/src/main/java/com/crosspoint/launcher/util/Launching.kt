@@ -44,6 +44,8 @@ object Launching {
     fun bookMimeType(file: File): String {
         val name = file.name.lowercase()
         return when {
+            name.endsWith(".pdf") -> "application/pdf"
+            name.endsWith(".djvu") || name.endsWith(".djv") -> "image/vnd.djvu"
             name.endsWith(".fb2.zip") || name.endsWith(".zip") -> "application/x-zip-compressed"
             name.endsWith(".fb2") -> "application/x-fictionbook+xml"
             name.endsWith(".epub") -> EPUB_MIME
@@ -54,6 +56,8 @@ object Launching {
     private fun getMimeTypesForFile(file: File): List<String> {
         val name = file.name.lowercase()
         return when {
+            name.endsWith(".pdf") -> listOf("application/pdf", "*/*")
+            name.endsWith(".djvu") || name.endsWith(".djv") -> listOf("image/vnd.djvu", "application/x-djvu", "*/*")
             name.endsWith(".fb2.zip") -> listOf(
                 "application/x-zip-compressed",
                 "application/zip",
@@ -90,25 +94,29 @@ object Launching {
         }
     }
 
-    /** Open a book with the user's chosen default reader, if installed; else use the built-in reader. */
+    /** Open a book with the user's chosen default reader, if installed; else use the built-in reader (for epub/fb2) or chooser (for pdf/djvu). */
     fun openBook(context: Context, filePath: String, defaultReaderPackage: String?) {
         val file = File(filePath)
         if (!file.exists()) { toast(context, "File missing"); return }
-        if (defaultReaderPackage == null) {
+        val name = file.name.lowercase()
+        val isPageDoc = name.endsWith(".pdf") || name.endsWith(".djvu") || name.endsWith(".djv")
+        if (defaultReaderPackage == null && !isPageDoc) {
             context.startActivity(Intent(context, com.crosspoint.launcher.reader.ReaderActivity::class.java)
                 .putExtra("book_path", filePath).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             return
         }
         val mimeTypes = getMimeTypesForFile(file)
         var launched = false
-        for (mime in mimeTypes) {
-            val intent = baseViewIntent(context, file, mime)
-            if (isResolvable(context, intent, defaultReaderPackage)) {
-                intent.setPackage(defaultReaderPackage)
-                val ok = runCatching { context.startActivity(intent); true }.getOrDefault(false)
-                if (ok) {
-                    launched = true
-                    break
+        if (defaultReaderPackage != null) {
+            for (mime in mimeTypes) {
+                val intent = baseViewIntent(context, file, mime)
+                if (isResolvable(context, intent, defaultReaderPackage)) {
+                    intent.setPackage(defaultReaderPackage)
+                    val ok = runCatching { context.startActivity(intent); true }.getOrDefault(false)
+                    if (ok) {
+                        launched = true
+                        break
+                    }
                 }
             }
         }
@@ -181,10 +189,6 @@ object Launching {
 
     fun openCalendar(context: Context) {
         val pm = context.packageManager
-        // Prefer a real calendar app (CATEGORY_APP_CALENDAR), then a calendar content viewer.
-        // Only launch intents that actually resolve to an activity so we don't fall through to
-        // an unrelated handler (some devices route the content URI to a file viewer that then
-        // reports "file not found").
         val candidates = listOf(
             Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CALENDAR),
             Intent(Intent.ACTION_VIEW, CalendarContract.CONTENT_URI.buildUpon()
