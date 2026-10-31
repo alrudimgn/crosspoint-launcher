@@ -5,6 +5,8 @@ import android.appwidget.AppWidgetManager
 import android.app.role.RoleManager
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -144,18 +146,28 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshDefaultHome() {
-        val rm = getSystemService(RoleManager::class.java)
-        isDefaultHome.value = rm?.isRoleHeld(RoleManager.ROLE_HOME) ?: false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val rm = getSystemService(RoleManager::class.java)
+            isDefaultHome.value = rm?.isRoleHeld(RoleManager.ROLE_HOME) ?: false
+        } else {
+            val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            val resolve = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            isDefaultHome.value = resolve?.activityInfo?.packageName == packageName
+        }
     }
 
     private fun requestDefaultHome() {
-        val rm = getSystemService(RoleManager::class.java)
-        if (rm != null && rm.isRoleAvailable(RoleManager.ROLE_HOME) && !rm.isRoleHeld(RoleManager.ROLE_HOME)) {
-            runCatching { roleLauncher.launch(rm.createRequestRoleIntent(RoleManager.ROLE_HOME)) }
-                .onFailure { Launching.openHomeSettings(this) }
-        } else if (rm?.isRoleHeld(RoleManager.ROLE_HOME) != true) {
-            Launching.openHomeSettings(this)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val rm = getSystemService(RoleManager::class.java)
+            if (rm != null && rm.isRoleAvailable(RoleManager.ROLE_HOME) && !rm.isRoleHeld(RoleManager.ROLE_HOME)) {
+                runCatching { roleLauncher.launch(rm.createRequestRoleIntent(RoleManager.ROLE_HOME)) }
+                    .onFailure { Launching.openHomeSettings(this) }
+                return
+            } else if (rm?.isRoleHeld(RoleManager.ROLE_HOME) == true) {
+                return
+            }
         }
+        Launching.openHomeSettings(this)
     }
 
     private fun pickCoverWidget() {

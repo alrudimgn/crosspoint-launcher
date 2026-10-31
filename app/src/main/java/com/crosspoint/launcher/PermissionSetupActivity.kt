@@ -67,7 +67,12 @@ class PermissionSetupActivity : ComponentActivity() {
         "storage" -> (Build.VERSION.SDK_INT > 32 || has(Manifest.permission.READ_EXTERNAL_STORAGE)) &&
             (Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager())
         "wifi" -> has(wifiPermission()) && (Build.VERSION.SDK_INT >= 33 || has(Manifest.permission.ACCESS_COARSE_LOCATION))
-        "home" -> getSystemService(RoleManager::class.java)?.isRoleHeld(RoleManager.ROLE_HOME) == true
+        "home" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            getSystemService(RoleManager::class.java)?.isRoleHeld(RoleManager.ROLE_HOME) == true
+        } else {
+            val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName == packageName
+        }
         else -> true  // tip screens are informational
     }
 
@@ -91,10 +96,14 @@ class PermissionSetupActivity : ComponentActivity() {
                     arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
                     else arrayOf(wifiPermission()))
                 else -> {
-                    val manager = getSystemService(RoleManager::class.java)
-                    if (manager?.isRoleAvailable(RoleManager.ROLE_HOME) == true)
-                        homeRequest.launch(manager.createRequestRoleIntent(RoleManager.ROLE_HOME))
-                    else Launching.openHomeSettings(this)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val manager = getSystemService(RoleManager::class.java)
+                        if (manager?.isRoleAvailable(RoleManager.ROLE_HOME) == true) {
+                            homeRequest.launch(manager.createRequestRoleIntent(RoleManager.ROLE_HOME))
+                            return
+                        }
+                    }
+                    Launching.openHomeSettings(this)
                 }
             }
         } catch (_: Exception) {

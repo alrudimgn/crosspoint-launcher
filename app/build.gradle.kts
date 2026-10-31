@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "com.crosspoint.launcher"
-        minSdk = 29
+        minSdk = 26
         targetSdk = 35
         testInstrumentationRunner = "com.crosspoint.launcher.IntegrationChecks"
         // scripts/release.sh passes versionCode; local builds stay at 1 so any release can update them.
@@ -50,6 +50,15 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    applicationVariants.all {
+        val variant = this
+        outputs.configureEach {
+            (this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl)?.let { output ->
+                output.outputFileName = "crosspoint-launcher-v${variant.versionName}-b${variant.versionCode}-${variant.buildType.name}.apk"
+            }
+        }
     }
 }
 
