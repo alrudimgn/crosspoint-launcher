@@ -34,13 +34,23 @@ class AppRepository(private val context: Context) {
             .sortedBy { it.label.lowercase() }
     }
 
-    /** Apps able to open an EPUB (ACTION_VIEW with the epub mime type). */
+    /** Apps able to open books (ACTION_VIEW with EPUB or FB2 mime types). */
     suspend fun loadReaderApps(): List<AppInfo> = withContext(Dispatchers.IO) {
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(android.net.Uri.parse("file:///book.epub"), EPUB_MIME)
+        val mimes = listOf(
+            EPUB_MIME,
+            "application/x-fictionbook+xml",
+            "application/x-fictionbook",
+            "application/x-fb2",
+            "application/x-zip-compressed"
+        )
+        val all = mutableListOf<ResolveInfo>()
+        for (mime in mimes) {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(android.net.Uri.parse("file:///book"), mime)
+            }
+            all.addAll(queryActivities(intent))
         }
-        queryActivities(intent)
-            .filter { it.activityInfo.packageName != context.packageName }
+        all.filter { it.activityInfo.packageName != context.packageName }
             .distinctBy { it.activityInfo.packageName }
             .map { it.toAppInfo() }
             .sortedBy { it.label.lowercase() }

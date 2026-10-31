@@ -69,11 +69,29 @@ class EpubScanner(private val context: Context, private val sync: SyncRepository
             if (f.isDirectory) {
                 if (f.name.startsWith(".")) continue
                 collectEpubs(f, out, seen, visited, depth - 1)
-            } else if (f.extension.equals("epub", ignoreCase = true)) {
+            } else if (isSupportedBook(f)) {
                 val key = f.safeCanonicalPath()
                 if (seen.add(key)) out.add(File(key))
             }
         }
+    }
+
+    private fun isSupportedBook(file: File): Boolean {
+        val name = file.name.lowercase()
+        if (name.endsWith(".epub") || name.endsWith(".fb2") || name.endsWith(".fb2.zip")) {
+            return true
+        }
+        if (name.endsWith(".zip")) {
+            return runCatching {
+                ZipFile(file).use { zip ->
+                    zip.entries().asSequence().any {
+                        val ename = it.name.lowercase()
+                        (ename.endsWith(".fb2") || ename.endsWith(".epub")) && !ename.startsWith("__macosx")
+                    }
+                }
+            }.getOrDefault(false)
+        }
+        return false
     }
 
     private fun cachedParse(file: File): Book {
@@ -100,6 +118,9 @@ class EpubScanner(private val context: Context, private val sync: SyncRepository
     }
 
     private fun parse(file: File): Book {
+        if (com.crosspoint.launcher.reader.Fb2Document.isFb2(file)) {
+            return parseFb2(file)
+        }
         ZipFile(file).use { zip ->
             val opfPath = findOpfPath(zip)
             var title = file.nameWithoutExtension
@@ -157,6 +178,30 @@ class EpubScanner(private val context: Context, private val sync: SyncRepository
                 coverPath = coverFile?.absolutePath,
                 lastModified = file.lastModified()
             )
+        }
+    }
+
+    private fun parseFb2(file: File): Book {
+        val meta = com.crosspoint.launcher.reader.Fb2Document.extractMetadata(file)
+        val coverFile = meta.coverBytes?.let { bytes -> extractFb2Cover(bytes, file) }
+        return Book(
+            filePath = file.safeCanonicalPath(),
+            title = meta.title,
+            author = meta.author,
+            coverPath = coverFile?.absolutePath,
+            lastModified = file.lastModified()
+        )
+    }
+
+    private fun extractFb2Cover(imageBytes: ByteArray, book: File): File? {
+        val hash = sha1(book.absolutePath + ":" + book.lastModified() + ":" + book.length())
+        val out = File(coverDir, "$hash.jpg")
+        if (out.exists() && out.length() > 0) return out
+        return try {
+            if (CoverImages.save({ java.io.ByteArrayInputStream(imageBytes) }, out)) out else null
+        } catch (e: Exception) {
+            Log.w(TAG, "fb2 cover extract failed for ${book.name}: ${e.message}")
+            null
         }
     }
 

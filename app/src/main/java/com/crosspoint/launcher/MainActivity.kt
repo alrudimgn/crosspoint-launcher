@@ -51,6 +51,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.crosspoint.launcher.reader.EpubBook.cacheDir = cacheDir
         roleLauncher = registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { refreshDefaultHome() }

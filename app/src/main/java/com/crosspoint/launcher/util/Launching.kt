@@ -38,19 +38,59 @@ object Launching {
         } ?: toast(context, "App not found")
     }
 
-    private fun epubUri(context: Context, file: File): Uri =
+    private fun bookUri(context: Context, file: File): Uri =
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 
-    private fun baseViewIntent(context: Context, file: File): Intent {
-        val uri = epubUri(context, file)
+    fun bookMimeType(file: File): String {
+        val name = file.name.lowercase()
+        return when {
+            name.endsWith(".fb2.zip") || name.endsWith(".zip") -> "application/x-zip-compressed"
+            name.endsWith(".fb2") -> "application/x-fictionbook+xml"
+            name.endsWith(".epub") -> EPUB_MIME
+            else -> "*/*"
+        }
+    }
+
+    private fun getMimeTypesForFile(file: File): List<String> {
+        val name = file.name.lowercase()
+        return when {
+            name.endsWith(".fb2.zip") -> listOf(
+                "application/x-zip-compressed",
+                "application/zip",
+                "application/x-fictionbook+xml",
+                "application/x-fb2",
+                "*/*"
+            )
+            name.endsWith(".fb2") -> listOf(
+                "application/x-fictionbook+xml",
+                "application/x-fictionbook",
+                "application/x-fb2",
+                "text/xml",
+                "*/*"
+            )
+            name.endsWith(".zip") -> listOf(
+                "application/zip",
+                "application/x-zip-compressed",
+                "*/*"
+            )
+            name.endsWith(".epub") -> listOf(
+                EPUB_MIME,
+                "*/*"
+            )
+            else -> listOf("*/*")
+        }
+    }
+
+    private fun baseViewIntent(context: Context, file: File, mimeType: String = bookMimeType(file)): Intent {
+        val uri = bookUri(context, file)
         return Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, EPUB_MIME)
+            setDataAndType(uri, mimeType)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
     }
 
-    /** Open an EPUB with the user's chosen default reader, if installed; else use the built-in reader. */
+    /** Open a book with the user's chosen default reader, if installed; else use the built-in reader. */
     fun openBook(context: Context, filePath: String, defaultReaderPackage: String?) {
         val file = File(filePath)
         if (!file.exists()) { toast(context, "File missing"); return }
@@ -59,12 +99,20 @@ object Launching {
                 .putExtra("book_path", filePath).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             return
         }
-        val intent = baseViewIntent(context, file)
-        if (isResolvable(context, intent, defaultReaderPackage)) {
-            intent.setPackage(defaultReaderPackage)
-            runCatching { context.startActivity(intent) }
-                .onFailure { openBookChooser(context, filePath) }
-        } else {
+        val mimeTypes = getMimeTypesForFile(file)
+        var launched = false
+        for (mime in mimeTypes) {
+            val intent = baseViewIntent(context, file, mime)
+            if (isResolvable(context, intent, defaultReaderPackage)) {
+                intent.setPackage(defaultReaderPackage)
+                val ok = runCatching { context.startActivity(intent); true }.getOrDefault(false)
+                if (ok) {
+                    launched = true
+                    break
+                }
+            }
+        }
+        if (!launched) {
             openBookChooser(context, filePath)
         }
     }

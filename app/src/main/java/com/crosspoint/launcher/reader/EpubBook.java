@@ -16,6 +16,7 @@ import java.util.zip.ZipFile;
 public final class EpubBook {
     // ponytail: cap chapter size at 1 MiB; stream text blocks if larger chapters are needed.
     private static final int MAX_ENTRY = 1024 * 1024;
+    public static File cacheDir = null;
     public final File file;
     public final String title;
     public final String author;
@@ -25,19 +26,31 @@ public final class EpubBook {
     public final List<Integer> spineIndices;
     /** Table of contents from the EPUB 3 nav document or EPUB 2 NCX; empty when the book has none. */
     public final List<TocEntry> toc;
+    private Fb2Document fb2Doc = null;
 
     public static final class TocEntry {
         public final String title;
         public final int chapter;
         public final int depth;
         public final String fragment;
-        TocEntry(String title, int chapter, int depth, String fragment) {
+        public TocEntry(String title, int chapter, int depth, String fragment) {
             this.title = title; this.chapter = chapter; this.depth = depth; this.fragment = fragment;
         }
     }
 
     public EpubBook(File file) throws Exception {
         this.file = file;
+        if (Fb2Document.isFb2(file)) {
+            Fb2Document doc = Fb2Document.parse(file, cacheDir);
+            this.title = doc.title;
+            this.author = doc.author;
+            this.language = doc.language;
+            this.chapters = doc.chapters;
+            this.spineIndices = doc.spineIndices;
+            this.toc = doc.toc;
+            this.fb2Doc = doc;
+            return;
+        }
         Map<String, String> manifest = new HashMap<>();
         List<String> spine = new ArrayList<>();
         List<Integer> indices = new ArrayList<>();
@@ -125,6 +138,9 @@ public final class EpubBook {
     }
 
     public String chapterHtml(int index) throws IOException {
+        if (fb2Doc != null) {
+            return fb2Doc.chapterHtml(index);
+        }
         try (ZipFile zip = new ZipFile(file)) {
             byte[] bytes = readEntry(zip, chapters.get(index));
             // EPUB content documents use UTF-8 or UTF-16, including BOM-marked UTF-16.
@@ -136,6 +152,9 @@ public final class EpubBook {
 
     /** Raw bytes of a resource (image, footnote document) referenced from a chapter. */
     public byte[] resource(int chapter, String href) throws IOException {
+        if (fb2Doc != null) {
+            return fb2Doc.resource(href);
+        }
         try (ZipFile zip = new ZipFile(file)) {
             return readEntry(zip, resolve(chapters.get(chapter), href.contains("#") ? href.substring(0, href.indexOf('#')) : href));
         }

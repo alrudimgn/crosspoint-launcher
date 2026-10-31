@@ -269,15 +269,20 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Rename a book file (keeping its .epub extension), then rescan. */
+    /** Rename a book file (keeping its extension), then rescan. */
     fun renameBook(path: String, newBaseName: String) {
         viewModelScope.launch {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 runCatching {
                     val f = java.io.File(path)
-                    val ext = f.extension
+                    val lower = f.name.lowercase()
+                    val (baseName, ext) = when {
+                        lower.endsWith(".fb2.zip") -> Pair(f.name.dropLast(8), "fb2.zip")
+                        lower.endsWith(".epub.zip") -> Pair(f.name.dropLast(9), "epub.zip")
+                        else -> Pair(f.nameWithoutExtension, f.extension)
+                    }
                     val clean = newBaseName.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                        .ifBlank { f.nameWithoutExtension }
+                        .ifBlank { baseName }
                     val target = java.io.File(f.parentFile, if (ext.isNotEmpty()) "$clean.$ext" else clean)
                     if (target.absolutePath != f.absolutePath) f.renameTo(target)
                 }

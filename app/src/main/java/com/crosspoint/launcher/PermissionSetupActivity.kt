@@ -123,9 +123,9 @@ class PermissionSetupActivity : ComponentActivity() {
         }
         val description = when (key) {
             "storage" -> if (Build.VERSION.SDK_INT >= 30)
-                if (Build.VERSION.SDK_INT <= 32) "Allow storage permission, then all-files access, so CrossPoint can find your EPUBs and save downloaded or transferred books. Return here after each request."
-                else "Allow all-files access so CrossPoint can find your EPUBs and save downloaded or transferred books. Return here afterward."
-                else "Allow storage access so CrossPoint can find the EPUB books on your device."
+                if (Build.VERSION.SDK_INT <= 32) "Allow storage permission, then all-files access, so CrossPoint can find your books and save downloaded or transferred books. Return here after each request."
+                else "Allow all-files access so CrossPoint can find your books and save downloaded or transferred books. Return here afterward."
+                else "Allow storage access so CrossPoint can find the books on your device."
             "wifi" -> if (Build.VERSION.SDK_INT >= 33)
                 "Allow nearby Wi-Fi access to create a hotspot for book transfers. CrossPoint does not use this to track your location."
                 else "Android requires location permission to create a Wi-Fi hotspot for book transfers. Choose precise location if asked. CrossPoint does not track your location."

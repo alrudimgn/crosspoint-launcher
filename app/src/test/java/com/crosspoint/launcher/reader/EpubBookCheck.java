@@ -85,5 +85,99 @@ public final class EpubBookCheck {
         nav.put("OPS/nav.xhtml", "<html><body><nav><ol><li><a href='x'>&nbsp;broken</a></li></ol></nav></body></html>");
         assert new EpubBook(epub(nav)).toc.isEmpty(); // A broken TOC never blocks opening.
         System.out.println("EPUB reader checks passed");
+
+        // --- FB2 tests ---
+        String fb2Xml = "<?xml version='1.0' encoding='utf-8'?>\n"
+            + "<FictionBook xmlns='http://www.gribuser.ru/xml/fictionbook/2.0' xmlns:l='http://www.w3.org/1999/xlink'>\n"
+            + "  <description>\n"
+            + "    <title-info>\n"
+            + "      <genre>prose_classic</genre>\n"
+            + "      <author>\n"
+            + "        <first-name>Лев</first-name>\n"
+            + "        <middle-name>Николаевич</middle-name>\n"
+            + "        <last-name>Толстой</last-name>\n"
+            + "      </author>\n"
+            + "      <book-title>Кавказский пленник</book-title>\n"
+            + "      <lang>ru</lang>\n"
+            + "      <coverpage><image l:href='#cover.jpg'/></coverpage>\n"
+            + "    </title-info>\n"
+            + "  </description>\n"
+            + "  <body>\n"
+            + "    <section>\n"
+            + "      <title><p>Кавказский пленник&nbsp;&mdash; Быль</p></title>\n"
+            + "      <p>Служил на Кавказе офицером один барин.</p>\n"
+            + "      <empty-line/>\n"
+            + "      <p>Звали его <strong>Жилин</strong>. Пришло ему раз письмо из дома.</p>\n"
+            + "    </section>\n"
+            + "    <section>\n"
+            + "      <title><p>Глава II</p></title>\n"
+            + "      <p>Вот и поехали они вдвоем.</p>\n"
+            + "    </section>\n"
+            + "  </body>\n"
+            + "  <binary id='cover.jpg' content-type='image/jpeg'>aGVsbG8=</binary>\n"
+            + "</FictionBook>";
+
+        File fb2File = Files.createTempFile("test-book", ".fb2").toFile();
+        fb2File.deleteOnExit();
+        try (FileOutputStream fos = new FileOutputStream(fb2File)) {
+            fos.write(fb2Xml.getBytes(StandardCharsets.UTF_8));
+        }
+
+        assert Fb2Document.isFb2(fb2File);
+        Fb2Document.Metadata meta = Fb2Document.extractMetadata(fb2File);
+        assert meta.title.equals("Кавказский пленник") : "Unexpected title: " + meta.title;
+        assert meta.author.equals("Лев Николаевич Толстой") : "Unexpected author: " + meta.author;
+        assert meta.coverBytes != null && new String(meta.coverBytes).equals("hello");
+
+        EpubBook fb2Book = new EpubBook(fb2File);
+        assert fb2Book.title.equals("Кавказский пленник");
+        assert fb2Book.author.equals("Лев Николаевич Толстой");
+        assert fb2Book.chapters.size() == 2;
+        assert fb2Book.chapterHtml(0).contains("Жилин");
+        assert fb2Book.chapterHtml(1).contains("Глава II");
+        assert fb2Book.toc.size() == 2;
+        assert fb2Book.toc.get(0).title.contains("Кавказский пленник");
+        assert new String(fb2Book.resource(0, "cover.jpg")).equals("hello");
+
+        // Test FB2.ZIP
+        File fb2Zip = Files.createTempFile("test-book", ".fb2.zip").toFile();
+        fb2Zip.deleteOnExit();
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(fb2Zip))) {
+            zos.putNextEntry(new ZipEntry("book.fb2"));
+            zos.write(fb2Xml.getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+        }
+        assert Fb2Document.isFb2(fb2Zip);
+        EpubBook zipBook = new EpubBook(fb2Zip);
+        assert zipBook.title.equals("Кавказский пленник");
+        assert zipBook.chapters.size() == 2;
+        assert zipBook.chapterHtml(0).contains("Жилин");
+
+        // Test Windows-1251 encoding
+        String cp1251Xml = "<?xml version='1.0' encoding='windows-1251'?>\n"
+            + "<FictionBook xmlns='http://www.gribuser.ru/xml/fictionbook/2.0'>\n"
+            + "  <description>\n"
+            + "    <title-info>\n"
+            + "      <author><first-name>Иван</first-name><last-name>Тургенев</last-name></author>\n"
+            + "      <book-title>Муму</book-title>\n"
+            + "    </title-info>\n"
+            + "  </description>\n"
+            + "  <body>\n"
+            + "    <section>\n"
+            + "      <title><p>Муму</p></title>\n"
+            + "      <p>В одной из отдаленных улиц Москвы...</p>\n"
+            + "    </section>\n"
+            + "  </body>\n"
+            + "</FictionBook>";
+        File cp1251File = Files.createTempFile("test-cp1251", ".fb2").toFile();
+        cp1251File.deleteOnExit();
+        try (FileOutputStream fos = new FileOutputStream(cp1251File)) {
+            fos.write(cp1251Xml.getBytes(java.nio.charset.Charset.forName("windows-1251")));
+        }
+        EpubBook cp1251Book = new EpubBook(cp1251File);
+        assert cp1251Book.title.equals("Муму");
+        assert cp1251Book.author.equals("Иван Тургенев");
+        assert cp1251Book.chapterHtml(0).contains("Москвы");
+        System.out.println("FB2 reader checks passed");
     }
 }

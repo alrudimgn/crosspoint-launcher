@@ -119,6 +119,7 @@ class ReaderActivity : ComponentActivity(), ReaderPanelHost {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        EpubBook.cacheDir = cacheDir
         val root = FrameLayout(this)
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())

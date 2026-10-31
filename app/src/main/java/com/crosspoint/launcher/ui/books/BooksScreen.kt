@@ -56,7 +56,7 @@ fun BooksScreen(
         when {
             !hasStorage -> Box(Modifier.padding(m.contentSidePadding)) { StorageHint(onGrantStorage) }
             books.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                BodyText(if (loading) "Scanning…" else "No EPUB books found", muted = true, size = 15)
+                BodyText(if (loading) "Scanning…" else "No books found", muted = true, size = 15)
             }
             else -> ScrollList(
                 Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = m.contentSidePadding, vertical = 8.dp)

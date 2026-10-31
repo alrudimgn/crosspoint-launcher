@@ -749,7 +749,7 @@ class FileTransferServer(
               <main>
                 <p class="eyebrow">Local file transfer</p>
                 <h1>Send books to CrossPoint.</h1>
-                <p class="lede">Upload EPUB files from any browser on the same Wi-Fi network. Files land in the device Books folder and appear in your launcher library after scanning.</p>
+                <p class="lede">Upload EPUB and FB2 files from any browser on the same Wi-Fi network. Files land in the device Books folder and appear in your launcher library after scanning.</p>
                 <div class="stack">
                   <div class="card">
                     <h2>Device Status</h2>
@@ -760,9 +760,9 @@ class FileTransferServer(
                   <div class="card">
                     <h2>Quick Upload</h2>
                     <form class="upload-form" action="/upload?path=/Books" method="post" enctype="multipart/form-data">
-                      <input type="file" name="file" accept=".epub" />
+                      <input type="file" name="file" accept=".epub,.fb2,.zip,.fb2.zip" />
                       <input type="hidden" name="path" value="/Books" />
-                      <button class="upload-btn" type="submit">Upload EPUB</button>
+                      <button class="upload-btn" type="submit">Upload Book</button>
                     </form>
                   </div>
                 </div>
