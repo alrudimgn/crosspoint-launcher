@@ -146,8 +146,9 @@ class EpubScanner(private val context: Context, private val sync: SyncRepository
         runCatching {
             val json = JSONObject(entry.readText())
             val cover = json.optString("cover").ifBlank { null }
+            val hasNoCover = json.optBoolean("hasNoCover", false)
             if (json.getLong("modified") == file.lastModified() && json.getLong("size") == file.length() &&
-                (cover == null || File(cover).isFile)) {
+                ((cover != null && File(cover).isFile) || hasNoCover)) {
                 return Book(file.safeCanonicalPath(), json.getString("title"), json.getString("author"), cover, file.lastModified())
             }
         }
@@ -157,6 +158,7 @@ class EpubScanner(private val context: Context, private val sync: SyncRepository
             temp.writeText(JSONObject().apply {
                 put("modified", file.lastModified()); put("size", file.length())
                 put("title", book.title); put("author", book.author); put("cover", book.coverPath.orEmpty())
+                put("hasNoCover", book.coverPath == null)
             }.toString())
             if (!temp.renameTo(entry)) temp.delete()
         }

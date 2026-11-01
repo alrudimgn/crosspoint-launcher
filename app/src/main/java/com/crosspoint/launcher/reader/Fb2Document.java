@@ -456,7 +456,13 @@ public final class Fb2Document {
                 buffered.reset();
 
                 String charsetName = detectCharset(header, Math.max(0, read));
-                Reader reader = new EntityFilterReader(new InputStreamReader(buffered, Charset.forName(charsetName)));
+                FilterInputStream nonClosing = new FilterInputStream(buffered) {
+                    @Override
+                    public void close() {
+                        // Prevent XMLReader from closing the underlying buffered stream when AbortParsingException occurs
+                    }
+                };
+                Reader reader = new EntityFilterReader(new InputStreamReader(nonClosing, Charset.forName(charsetName)));
 
                 SAXParserFactory factory = SAXParserFactory.newInstance();
                 factory.setNamespaceAware(false);
@@ -705,7 +711,13 @@ public final class Fb2Document {
                 buffered.reset();
 
                 String charsetName = detectCharset(header, Math.max(0, read));
-                Reader reader = new EntityFilterReader(new InputStreamReader(buffered, Charset.forName(charsetName)));
+                FilterInputStream nonClosing = new FilterInputStream(buffered) {
+                    @Override
+                    public void close() {
+                        // Prevent XMLReader from closing the underlying buffered stream when AbortParsingException occurs
+                    }
+                };
+                Reader reader = new EntityFilterReader(new InputStreamReader(nonClosing, Charset.forName(charsetName)));
 
                 SAXParserFactory factory = SAXParserFactory.newInstance();
                 factory.setNamespaceAware(false);

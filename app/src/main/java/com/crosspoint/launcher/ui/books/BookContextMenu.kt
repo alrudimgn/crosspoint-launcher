@@ -1,13 +1,16 @@
 package com.crosspoint.launcher.ui.books
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,12 +26,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.crosspoint.launcher.model.AppLanguage
 import com.crosspoint.launcher.model.Book
 import com.crosspoint.launcher.ui.components.BodyText
@@ -38,7 +41,8 @@ import com.crosspoint.launcher.util.LocalAppLanguage
 
 /**
  * Long-press context menu for a book: Open, Open with…, Rename, Delete. Rename and Delete show an
- * inline confirmation step. Styled for the e-ink B&W theme.
+ * inline confirmation step. Styled for the e-ink B&W theme. Rendered as an in-compose overlay
+ * to guarantee instantaneous touch response on Android 8.1 / e-ink touch screens.
  */
 @Composable
 fun BookContextMenu(
@@ -56,13 +60,29 @@ fun BookContextMenu(
     val isRu = lang == AppLanguage.RUSSIAN
     var mode by remember { mutableStateOf(Mode.MENU) }
 
-    Dialog(onDismissRequest = onDismiss) {
+    BackHandler(onBack = onDismiss)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.45f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onDismiss
+            ),
+        contentAlignment = Alignment.Center
+    ) {
         Column(
             Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
+                .fillMaxWidth(0.85f)
+                .clip(RoundedCornerShape(12.dp))
                 .background(colors.background)
-                .border(2.dp, colors.divider, RoundedCornerShape(10.dp))
+                .border(2.dp, colors.divider, RoundedCornerShape(12.dp))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { /* swallow tap inside dialog */ }
                 .padding(vertical = 8.dp)
         ) {
             // Title
@@ -122,63 +142,51 @@ private fun MenuRow(icon: String, label: String, onClick: () -> Unit) {
 private fun RenamePanel(initial: String, isRu: Boolean, onCancel: () -> Unit, onConfirm: (String) -> Unit) {
     val colors = CrossPointTheme.colors
     var text by remember { mutableStateOf(initial) }
-    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        BodyText(if (isRu) "Новое название" else "New name", muted = true, size = 13, weight = FontWeight.Bold)
-        Box(
-            Modifier.fillMaxWidth()
-                .border(1.5.dp, colors.divider, RoundedCornerShape(8.dp))
-                .padding(horizontal = 12.dp, vertical = 12.dp)
-        ) {
-            BasicTextField(
-                value = text,
-                onValueChange = { text = it },
-                singleLine = true,
-                textStyle = TextStyle(color = colors.onBackground, fontSize = 16.sp),
-                cursorBrush = SolidColor(colors.onBackground),
-                modifier = Modifier.fillMaxWidth()
-            )
+    Column(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            BodyText(if (isRu) "Новое название" else "New name", muted = true, size = 13, weight = FontWeight.Bold)
+            Box(
+                Modifier.fillMaxWidth()
+                    .border(1.5.dp, colors.divider, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                BasicTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = colors.onBackground, fontSize = 16.sp),
+                    cursorBrush = SolidColor(colors.onBackground),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
-        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            TextButton(if (isRu) "Отмена" else "Cancel", onCancel)
-            Spacer(Modifier.width(12.dp))
-            TextButton(if (isRu) "Сохранить" else "Rename", { onConfirm(text) }, emphasized = true)
-        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
+        MenuRow("check", if (isRu) "Сохранить" else "Save", onClick = { onConfirm(text) })
+        MenuRow("x", if (isRu) "Отмена" else "Cancel", onClick = onCancel)
     }
 }
 
 @Composable
 private fun ConfirmDeletePanel(isRu: Boolean, onCancel: () -> Unit, onConfirm: () -> Unit) {
-    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        BodyText(
-            if (isRu) "Удалить файл книги с устройства навсегда?" else "Delete this book file from device permanently?",
-            weight = FontWeight.Medium,
-            size = 16
-        )
-        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            TextButton(if (isRu) "Отмена" else "Cancel", onCancel)
-            Spacer(Modifier.width(12.dp))
-            TextButton(if (isRu) "Удалить" else "Delete", onConfirm, emphasized = true)
-        }
-    }
-}
-
-@Composable
-private fun TextButton(label: String, onClick: () -> Unit, emphasized: Boolean = false) {
     val colors = CrossPointTheme.colors
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (emphasized) colors.onBackground else colors.background)
-            .border(1.5.dp, colors.divider, RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 24.dp, vertical = 14.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        BodyText(
-            label,
-            weight = FontWeight.SemiBold,
-            size = 15,
-            color = if (emphasized) colors.background else colors.onBackground
+    Column(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            BodyText(
+                if (isRu) "Удалить файл книги с устройства навсегда?" else "Delete this book file from device permanently?",
+                weight = FontWeight.Medium,
+                size = 16
+            )
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
+        MenuRow(
+            icon = "trash_2",
+            label = if (isRu) "Да, удалить файл" else "Yes, delete file",
+            onClick = onConfirm
+        )
+        MenuRow(
+            icon = "x",
+            label = if (isRu) "Отмена" else "Cancel",
+            onClick = onCancel
         )
     }
 }

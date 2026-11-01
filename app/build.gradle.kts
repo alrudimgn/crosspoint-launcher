@@ -13,7 +13,7 @@ android {
         minSdk = 26
         targetSdk = 35
         testInstrumentationRunner = "com.crosspoint.launcher.IntegrationChecks"
-        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 5
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 6
         versionName = rootProject.file("VERSION").readText().trim()
     }
 
