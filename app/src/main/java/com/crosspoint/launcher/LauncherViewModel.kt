@@ -278,10 +278,18 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     /** Delete a book file, then rescan. */
     fun deleteBook(path: String) {
         viewModelScope.launch {
+            settingsRepo.removeBookFromRecent(path)
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 runCatching { java.io.File(path).delete() }
             }
             refreshBooks()
+        }
+    }
+
+    /** Remove a book from the reading history without deleting the file. */
+    fun removeBookFromRecent(path: String) {
+        viewModelScope.launch {
+            settingsRepo.removeBookFromRecent(path)
         }
     }
 

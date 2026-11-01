@@ -47,7 +47,9 @@ fun BookContextMenu(
     onOpenWith: () -> Unit,
     onRename: (String) -> Unit,
     onDelete: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    isInRecent: Boolean = false,
+    onRemoveFromRecent: (() -> Unit)? = null
 ) {
     val colors = CrossPointTheme.colors
     val lang = LocalAppLanguage.current
@@ -74,8 +76,11 @@ fun BookContextMenu(
                 Mode.MENU -> {
                     MenuRow("book_open", if (isRu) "Открыть" else "Open") { onOpen() }
                     MenuRow("library", if (isRu) "Открыть с помощью…" else "Open with…") { onOpenWith() }
+                    if (isInRecent && onRemoveFromRecent != null) {
+                        MenuRow("x", if (isRu) "Убрать из истории" else "Remove from history") { onRemoveFromRecent() }
+                    }
                     MenuRow("file_text", if (isRu) "Переименовать" else "Rename") { mode = Mode.RENAME }
-                    MenuRow("trash_2", if (isRu) "Удалить" else "Delete") { mode = Mode.DELETE }
+                    MenuRow("trash_2", if (isRu) "Удалить файл с устройства" else "Delete file from device") { mode = Mode.DELETE }
                 }
                 Mode.RENAME -> RenamePanel(
                     initial = book.title,
@@ -140,7 +145,11 @@ private fun RenamePanel(initial: String, isRu: Boolean, onCancel: () -> Unit, on
 @Composable
 private fun ConfirmDeletePanel(isRu: Boolean, onCancel: () -> Unit, onConfirm: () -> Unit) {
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        BodyText(if (isRu) "Удалить эту книгу навсегда?" else "Delete this book permanently?", weight = FontWeight.Medium, size = 15)
+        BodyText(
+            if (isRu) "Удалить файл книги с устройства навсегда?" else "Delete this book file from device permanently?",
+            weight = FontWeight.Medium,
+            size = 15
+        )
         Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
             TextButton(if (isRu) "Отмена" else "Cancel", onCancel)
             Spacer(Modifier.width(8.dp))

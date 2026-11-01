@@ -46,7 +46,8 @@ data class LauncherSettings(
     val lastAppliedSleepCover: String = "",
     val coverWidgetId: Int = -1,
     val lastOpenedBookPath: String? = null,
-    val lastOpenedBookAt: Long = 0L
+    val lastOpenedBookAt: Long = 0L,
+    val recentBooks: List<String> = emptyList()
 ) {
     fun effectiveHomeMenu(hasOpds: Boolean): List<HomeMenuItem> {
         if (homeItemOrder != null) return homeMenuItems
@@ -101,6 +102,7 @@ class SettingsRepository(private val context: Context) {
         val COVER_WIDGET_ID = intPreferencesKey("cover_widget_id")
         val LAST_OPENED_BOOK_PATH = stringPreferencesKey("last_opened_book_path")
         val LAST_OPENED_BOOK_AT = longPreferencesKey("last_opened_book_at")
+        val RECENT_BOOKS = stringPreferencesKey("recent_books_history")
     }
 
     val settings: Flow<LauncherSettings> = context.launcherDataStore.data.map { p ->
@@ -138,7 +140,8 @@ class SettingsRepository(private val context: Context) {
             lastAppliedSleepCover = p[Keys.SLEEP_COVER_APPLIED] ?: "",
             coverWidgetId = p[Keys.COVER_WIDGET_ID] ?: -1,
             lastOpenedBookPath = p[Keys.LAST_OPENED_BOOK_PATH],
-            lastOpenedBookAt = p[Keys.LAST_OPENED_BOOK_AT] ?: 0L
+            lastOpenedBookAt = p[Keys.LAST_OPENED_BOOK_AT] ?: 0L,
+            recentBooks = parseRecentBooks(p[Keys.RECENT_BOOKS], p[Keys.LAST_OPENED_BOOK_PATH])
         )
     }
 
@@ -231,10 +234,37 @@ class SettingsRepository(private val context: Context) {
         }
 
     suspend fun markBookOpened(path: String, openedAt: Long = System.currentTimeMillis()) =
-        context.launcherDataStore.edit {
-            it[Keys.LAST_OPENED_BOOK_PATH] = path
-            it[Keys.LAST_OPENED_BOOK_AT] = openedAt
+        context.launcherDataStore.edit { p ->
+            p[Keys.LAST_OPENED_BOOK_PATH] = path
+            p[Keys.LAST_OPENED_BOOK_AT] = openedAt
+            val existing = parseRecentBooks(p[Keys.RECENT_BOOKS], null).filter { it != path }
+            val updated = (listOf(path) + existing).take(20)
+            p[Keys.RECENT_BOOKS] = org.json.JSONArray(updated).toString()
         }
+
+    suspend fun removeBookFromRecent(path: String) =
+        context.launcherDataStore.edit { p ->
+            val existing = parseRecentBooks(p[Keys.RECENT_BOOKS], p[Keys.LAST_OPENED_BOOK_PATH]).filter { it != path }
+            p[Keys.RECENT_BOOKS] = org.json.JSONArray(existing).toString()
+            if (p[Keys.LAST_OPENED_BOOK_PATH] == path) {
+                p[Keys.LAST_OPENED_BOOK_PATH] = existing.firstOrNull() ?: ""
+            }
+        }
+
+    private fun parseRecentBooks(raw: String?, fallbackPath: String?): List<String> {
+        val list = if (!raw.isNullOrBlank()) {
+            runCatching {
+                val arr = org.json.JSONArray(raw)
+                (0 until arr.length()).map { arr.getString(it) }
+            }.getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
+        if (list.isEmpty() && !fallbackPath.isNullOrBlank()) {
+            return listOf(fallbackPath)
+        }
+        return list
+    }
 
     private fun parseIconOverrides(raw: String?): Map<String, String> {
         if (raw.isNullOrBlank()) return emptyMap()

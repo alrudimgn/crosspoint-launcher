@@ -59,7 +59,7 @@ fun LyraHome(state: HomeUiState, cb: HomeCallbacks) {
             } else {
                 when {
                     state.externalReading != null -> ExternalReadingFeature(state.externalReading, cb)
-                    state.books.firstOrNull() != null -> FeaturedBook(state.books.first(), cb)
+                    state.recentBooks.firstOrNull() != null -> FeaturedBook(state.recentBooks.first(), cb)
                     else -> BooksPlaceholder(state, cb)
                 }
             }
@@ -164,27 +164,16 @@ fun Lyra3CoversHome(state: HomeUiState, cb: HomeCallbacks) {
             } else if (state.externalReading != null) {
                 ExternalReadingFeature(state.externalReading, cb)
             } else {
-                val recent = state.books.take(6)
+                val recent = state.recentBooks.take(3)
                 if (recent.isEmpty()) {
                     BooksPlaceholder(state, cb)
                 } else {
                     BodyText(L10n.recentBooks(lang), muted = true, size = 12, weight = FontWeight.Medium)
-                    val row1 = recent.take(3)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        row1.forEach { book ->
+                        recent.forEach { book ->
                             CoverTile(book, cb, Modifier.weight(1f))
                         }
-                        repeat(3 - row1.size) { Spacer(Modifier.weight(1f)) }
-                    }
-                    if (recent.size > 3) {
-                        val row2 = recent.drop(3).take(3)
-                        Spacer(Modifier.height(8.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            row2.forEach { book ->
-                                CoverTile(book, cb, Modifier.weight(1f))
-                            }
-                            repeat(3 - row2.size) { Spacer(Modifier.weight(1f)) }
-                        }
+                        repeat(3 - recent.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
@@ -246,7 +235,7 @@ fun CarouselHome(state: HomeUiState, cb: HomeCallbacks) {
                     ExternalReadingFeature(state.externalReading, cb)
                 }
             } else {
-                if (state.books.isEmpty()) {
+                if (state.recentBooks.isEmpty()) {
                     Box(Modifier.padding(horizontal = m.contentSidePadding)) {
                         BooksPlaceholder(state, cb)
                     }
@@ -259,12 +248,12 @@ fun CarouselHome(state: HomeUiState, cb: HomeCallbacks) {
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        state.books.take(12).forEachIndexed { index, book ->
+                        state.recentBooks.take(12).forEachIndexed { index, book ->
                             val focused = index == 0
                             CarouselCover(book, focused, cb)
                         }
                     }
-                    state.books.firstOrNull()?.let { lead ->
+                    state.recentBooks.firstOrNull()?.let { lead ->
                         Column(Modifier.padding(horizontal = m.contentSidePadding)) {
                             BodyText(lead.title, weight = FontWeight.Bold, size = 18, maxLines = 2)
                             if (lead.author.isNotEmpty())
@@ -346,9 +335,9 @@ fun MinimalHome(state: HomeUiState, cb: HomeCallbacks) {
                     onOpen = { cb.onOpenExternalReading(state.externalReading) },
                     onLongPress = { cb.onOpenExternalReading(state.externalReading) }
                 )
-            } else if (state.books.isNotEmpty()) {
+            } else if (state.recentBooks.isNotEmpty()) {
                 BodyText(L10n.recentBooks(lang), muted = true, size = 12, weight = FontWeight.Medium)
-                state.books.take(4).forEach { book ->
+                state.recentBooks.take(4).forEach { book ->
                     BookListRow(
                         title = book.title,
                         author = book.author,
@@ -433,13 +422,13 @@ fun CompactHome(state: HomeUiState, cb: HomeCallbacks) {
                     WidgetCoverSlot(state.settings.coverWidgetId, cb.onPickWidget)
                 }
             } else {
-                var selectedBook by remember(state.books) { mutableIntStateOf(0) }
+                var selectedBook by remember(state.recentBooks) { mutableIntStateOf(0) }
                 val carousel = state.settings.theme == com.crosspoint.launcher.model.ThemeType.CAROUSEL
-                val book = state.books.getOrNull(if (carousel) selectedBook else 0)
+                val book = state.recentBooks.getOrNull(if (carousel) selectedBook else 0)
                 val external = state.externalReading
-                if (external == null && state.settings.theme == com.crosspoint.launcher.model.ThemeType.LYRA_3_COVERS && state.books.isNotEmpty()) {
+                if (external == null && state.settings.theme == com.crosspoint.launcher.model.ThemeType.LYRA_3_COVERS && state.recentBooks.isNotEmpty()) {
                     Row(Modifier.fillMaxWidth().height(136.dp).padding(horizontal = m.contentSidePadding), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        state.books.take(3).forEach { recent ->
+                        state.recentBooks.take(3).forEach { recent ->
                             Pressable(onClick = { cb.onOpenBook(recent.filePath) }, onLongClick = { cb.onBookLongPress(recent) }, modifier = Modifier.weight(1f)) {
                                 Column {
                                     BookCover(recent.title, recent.author, rememberCover(recent.coverPath), Modifier.height(96.dp).width(64.dp))
@@ -460,10 +449,10 @@ fun CompactHome(state: HomeUiState, cb: HomeCallbacks) {
                             Column(Modifier.weight(1f)) {
                                 BodyText(external?.title ?: book!!.title, weight = FontWeight.Bold, size = 20, maxLines = 2)
                                 BodyText(external?.author ?: book!!.author, muted = true, size = 14, maxLines = 1)
-                                if (carousel && external == null && state.books.size > 1) Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (carousel && external == null && state.recentBooks.size > 1) Row(verticalAlignment = Alignment.CenterVertically) {
                                     com.crosspoint.launcher.ui.components.HeaderIconButton("chevron_left", { selectedBook = (selectedBook - 1).coerceAtLeast(0) }, iconSize = 18.dp)
-                                    BodyText("${selectedBook + 1}/${state.books.size}", size = 13)
-                                    com.crosspoint.launcher.ui.components.HeaderIconButton("chevron_right", { selectedBook = (selectedBook + 1).coerceAtMost(state.books.lastIndex) }, iconSize = 18.dp)
+                                    BodyText("${selectedBook + 1}/${state.recentBooks.size}", size = 13)
+                                    com.crosspoint.launcher.ui.components.HeaderIconButton("chevron_right", { selectedBook = (selectedBook + 1).coerceAtMost(state.recentBooks.lastIndex) }, iconSize = 18.dp)
                                 }
                             }
                         }

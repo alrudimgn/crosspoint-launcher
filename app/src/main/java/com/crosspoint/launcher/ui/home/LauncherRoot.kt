@@ -120,6 +120,18 @@ fun LauncherRoot(
         }
     }
 
+    val recentBooks = remember(books, settings.recentBooks, settings.lastOpenedBookPath) {
+        val paths = if (settings.recentBooks.isNotEmpty()) {
+            settings.recentBooks
+        } else {
+            listOfNotNull(settings.lastOpenedBookPath)
+        }
+        val bookMap = books.associateBy { it.filePath }
+        paths.mapNotNull { path ->
+            bookMap[path] ?: if (java.io.File(path).isFile) vm.cachedBook(path) else null
+        }
+    }
+
     val openBook: (String) -> Unit = { path ->
         vm.markBookOpened(path)
         val launch = { Launching.openBook(context, path, settings.defaultReaderPackage) }
@@ -222,6 +234,7 @@ fun LauncherRoot(
                         settings = settings,
                         menuItems = effectiveMenu,
                         books = orderedBooks,
+                        recentBooks = recentBooks,
                         externalReading = visibleExternalReading,
                         pinnedApps = pinned,
                         system = system,
@@ -287,7 +300,7 @@ fun LauncherRoot(
                 )
                 Screen.BOOKS -> BooksScreen(
                     title = booksTitle,
-                    books = if (booksTitle == L10n.recentBooks(settings.language)) orderedBooks else books,
+                    books = if (booksTitle == L10n.recentBooks(settings.language)) recentBooks else books,
                     loading = booksLoading,
                     hasStorage = hasStorage,
                     onOpen = openBook,
@@ -309,10 +322,13 @@ fun LauncherRoot(
             }
 
             bookMenu?.let { book ->
+                val isInRecent = recentBooks.any { it.filePath == book.filePath }
                 com.crosspoint.launcher.ui.books.BookContextMenu(
                     book = book,
+                    isInRecent = isInRecent,
                     onOpen = { openBook(book.filePath); bookMenu = null },
                     onOpenWith = { openBookChooser(book.filePath); bookMenu = null },
+                    onRemoveFromRecent = { vm.removeBookFromRecent(book.filePath); bookMenu = null },
                     onRename = { newName -> vm.renameBook(book.filePath, newName); bookMenu = null },
                     onDelete = { vm.deleteBook(book.filePath); bookMenu = null },
                     onDismiss = { bookMenu = null }
@@ -327,6 +343,7 @@ data class HomeUiState(
     val settings: com.crosspoint.launcher.data.LauncherSettings,
     val menuItems: List<HomeMenuItem>,
     val books: List<com.crosspoint.launcher.model.Book>,
+    val recentBooks: List<com.crosspoint.launcher.model.Book> = emptyList(),
     val externalReading: com.crosspoint.launcher.model.ExternalReadingState?,
     val pinnedApps: List<com.crosspoint.launcher.model.AppInfo>,
     val system: com.crosspoint.launcher.SystemState,
