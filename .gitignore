@@ -16,5 +16,7 @@
 /update-service/public/latest.json
 /update-service/.wrangler
 log/
+*.apk
 docs/s4-rom-and-eink.md
+*.apk
 docs/

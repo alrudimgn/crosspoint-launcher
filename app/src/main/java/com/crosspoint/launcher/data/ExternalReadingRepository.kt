@@ -27,6 +27,105 @@ class ExternalReadingRepository(private val context: Context, private val sync: 
         ).maxByOrNull { it.updatedAt }
     }
 
+    /**
+     * Reads recent reading history directly from external reader app storage on device:
+     * - KOReader: /storage/emulated/0/koreader/history.lua
+     * - AlReaderX: /storage/emulated/0/AlReaderX/Backup/alrxread.db (and fallback locations)
+     * Returns list of (filePath, timestampMillis) sorted by latest timestamp descending.
+     */
+    suspend fun getRecentExternalReads(): List<Pair<String, Long>> = withContext(Dispatchers.IO) {
+        val koreader = parseKoreaderHistory()
+        val alreader = parseAlReaderXHistory()
+        (koreader + alreader)
+            .groupBy { it.first }
+            .map { (path, entries) -> path to entries.maxOf { it.second } }
+            .sortedByDescending { it.second }
+    }
+
+    fun parseKoreaderHistory(): List<Pair<String, Long>> {
+        val candidates = listOf(
+            File(Environment.getExternalStorageDirectory(), "koreader/history.lua"),
+            File("/storage/emulated/0/koreader/history.lua")
+        ).distinctBy { it.absolutePath }
+
+        val file = candidates.firstOrNull { it.exists() && it.canRead() } ?: return emptyList()
+        val results = mutableListOf<Pair<String, Long>>()
+        var currentTime = 0L
+        var currentFile: String? = null
+
+        val timeRegex = Regex("""\["time"\]\s*=\s*(\d+)""")
+        val fileRegex = Regex("""\["file"\]\s*=\s*"([^"]+)"""")
+
+        runCatching {
+            file.forEachLine { rawLine ->
+                val line = rawLine.trim()
+                val timeMatch = timeRegex.find(line)
+                if (timeMatch != null) {
+                    currentTime = (timeMatch.groupValues[1].toLongOrNull() ?: 0L) * 1000L
+                }
+                val fileMatch = fileRegex.find(line)
+                if (fileMatch != null) {
+                    currentFile = fileMatch.groupValues[1]
+                }
+                if (line == "}," || line == "}") {
+                    val path = currentFile
+                    if (path != null && currentTime > 0L) {
+                        if (!path.contains("/koreader/help/") && File(path).isFile) {
+                            results.add(path to currentTime)
+                        }
+                    }
+                    currentTime = 0L
+                    currentFile = null
+                }
+            }
+        }.onFailure {
+            android.util.Log.w("ExternalReading", "Error reading KOReader history: ${it.message}")
+        }
+        return results
+    }
+
+    fun parseAlReaderXHistory(): List<Pair<String, Long>> {
+        val candidates = listOf(
+            File(Environment.getExternalStorageDirectory(), "AlReaderX/Backup/alrxread.db"),
+            File("/storage/emulated/0/AlReaderX/Backup/alrxread.db"),
+            File(Environment.getExternalStorageDirectory(), "AlReaderX/alrxread.db"),
+            File("/storage/emulated/0/AlReaderX/alrxread.db"),
+            File(Environment.getExternalStorageDirectory(), "Android/data/com.neverland.alreaderext/files/Backup/alrxread.db")
+        ).distinctBy { it.absolutePath }
+
+        val dbFile = candidates.firstOrNull { it.exists() && it.canRead() } ?: return emptyList()
+        val results = mutableListOf<Pair<String, Long>>()
+        var db: android.database.sqlite.SQLiteDatabase? = null
+        var cursor: android.database.Cursor? = null
+
+        try {
+            db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                dbFile.absolutePath,
+                null,
+                android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+            )
+            cursor = db.rawQuery(
+                "SELECT filename, datelast FROM recent WHERE filename IS NOT NULL ORDER BY datelast DESC LIMIT 30",
+                null
+            )
+            val fileCol = cursor.getColumnIndex("filename")
+            val dateCol = cursor.getColumnIndex("datelast")
+            while (cursor.moveToNext()) {
+                val filename = cursor.getString(fileCol)
+                val datelast = cursor.getLong(dateCol)
+                if (!filename.isNullOrBlank() && File(filename).isFile) {
+                    results.add(filename to datelast)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("ExternalReading", "Error reading AlReaderX history: ${e.message}")
+        } finally {
+            runCatching { cursor?.close() }
+            runCatching { db?.close() }
+        }
+        return results
+    }
+
     suspend fun warmKindleMetadataCache(): Boolean = withContext(Dispatchers.IO) {
         if (!sync.connected || !isOnline()) return@withContext false
         var changed = false

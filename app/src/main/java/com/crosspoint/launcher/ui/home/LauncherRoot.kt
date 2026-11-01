@@ -308,7 +308,8 @@ fun LauncherRoot(
                     onBookLongPress = { bookMenu = it },
                     onGrantStorage = { Launching.openManageStorageSettings(context) },
                     onRefresh = { vm.refreshBooks() },
-                    onBack = { screen = Screen.HOME }
+                    onBack = { screen = Screen.HOME },
+                    rootFolder = settings.libraryFolder
                 )
                 Screen.SEARCH -> SearchScreen(
                     apps = apps,

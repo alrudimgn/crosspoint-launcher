@@ -2,6 +2,7 @@ package com.crosspoint.launcher.ui.books
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,7 +32,6 @@ import androidx.compose.ui.window.Dialog
 import com.crosspoint.launcher.model.AppLanguage
 import com.crosspoint.launcher.model.Book
 import com.crosspoint.launcher.ui.components.BodyText
-import com.crosspoint.launcher.ui.components.Pressable
 import com.crosspoint.launcher.ui.icons.LucideIcon
 import com.crosspoint.launcher.ui.theme.CrossPointTheme
 import com.crosspoint.launcher.util.LocalAppLanguage
@@ -102,12 +102,16 @@ private enum class Mode { MENU, RENAME, DELETE }
 
 @Composable
 private fun MenuRow(icon: String, label: String, onClick: () -> Unit) {
-    Pressable(onClick = onClick, modifier = Modifier.fillMaxWidth(), cornerRadius = 0.dp) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
         Row(
-            Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 16.dp),
+            Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            LucideIcon(icon, Modifier.size(22.dp))
+            LucideIcon(icon, Modifier.size(24.dp))
             Spacer(Modifier.width(16.dp))
             BodyText(label, weight = FontWeight.Medium, size = 16)
         }
@@ -118,11 +122,11 @@ private fun MenuRow(icon: String, label: String, onClick: () -> Unit) {
 private fun RenamePanel(initial: String, isRu: Boolean, onCancel: () -> Unit, onConfirm: (String) -> Unit) {
     val colors = CrossPointTheme.colors
     var text by remember { mutableStateOf(initial) }
-    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        BodyText(if (isRu) "Новое название" else "New name", muted = true, size = 12, weight = FontWeight.Bold)
+    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        BodyText(if (isRu) "Новое название" else "New name", muted = true, size = 13, weight = FontWeight.Bold)
         Box(
             Modifier.fillMaxWidth()
-                .border(1.5.dp, colors.divider, RoundedCornerShape(6.dp))
+                .border(1.5.dp, colors.divider, RoundedCornerShape(8.dp))
                 .padding(horizontal = 12.dp, vertical = 12.dp)
         ) {
             BasicTextField(
@@ -136,7 +140,7 @@ private fun RenamePanel(initial: String, isRu: Boolean, onCancel: () -> Unit, on
         }
         Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
             TextButton(if (isRu) "Отмена" else "Cancel", onCancel)
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
             TextButton(if (isRu) "Сохранить" else "Rename", { onConfirm(text) }, emphasized = true)
         }
     }
@@ -144,15 +148,15 @@ private fun RenamePanel(initial: String, isRu: Boolean, onCancel: () -> Unit, on
 
 @Composable
 private fun ConfirmDeletePanel(isRu: Boolean, onCancel: () -> Unit, onConfirm: () -> Unit) {
-    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         BodyText(
             if (isRu) "Удалить файл книги с устройства навсегда?" else "Delete this book file from device permanently?",
             weight = FontWeight.Medium,
-            size = 15
+            size = 16
         )
         Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
             TextButton(if (isRu) "Отмена" else "Cancel", onCancel)
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
             TextButton(if (isRu) "Удалить" else "Delete", onConfirm, emphasized = true)
         }
     }
@@ -161,20 +165,20 @@ private fun ConfirmDeletePanel(isRu: Boolean, onCancel: () -> Unit, onConfirm: (
 @Composable
 private fun TextButton(label: String, onClick: () -> Unit, emphasized: Boolean = false) {
     val colors = CrossPointTheme.colors
-    Pressable(onClick = onClick) {
-        Box(
-            Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .then(if (emphasized) Modifier.background(colors.onBackground) else Modifier)
-                .border(1.5.dp, colors.divider, RoundedCornerShape(6.dp))
-                .padding(horizontal = 18.dp, vertical = 10.dp)
-        ) {
-            BodyText(
-                label,
-                weight = FontWeight.SemiBold,
-                size = 14,
-                color = if (emphasized) colors.background else colors.onBackground
-            )
-        }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (emphasized) colors.onBackground else colors.background)
+            .border(1.5.dp, colors.divider, RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        BodyText(
+            label,
+            weight = FontWeight.SemiBold,
+            size = 15,
+            color = if (emphasized) colors.background else colors.onBackground
+        )
     }
 }

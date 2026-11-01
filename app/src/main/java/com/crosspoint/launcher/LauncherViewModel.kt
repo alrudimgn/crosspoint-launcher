@@ -185,6 +185,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         if (externalJob?.isActive == true) return
         externalJob = viewModelScope.launch {
             _externalReading.value = externalReadingRepo.loadExternalReadingState()
+            val externalReads = externalReadingRepo.getRecentExternalReads()
+            if (externalReads.isNotEmpty()) {
+                settingsRepo.syncExternalReading(externalReads)
+            }
         }
         scheduleKindleMetadataWarm()
     }

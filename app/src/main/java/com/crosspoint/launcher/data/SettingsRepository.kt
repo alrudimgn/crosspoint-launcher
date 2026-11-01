@@ -103,6 +103,7 @@ class SettingsRepository(private val context: Context) {
         val LAST_OPENED_BOOK_PATH = stringPreferencesKey("last_opened_book_path")
         val LAST_OPENED_BOOK_AT = longPreferencesKey("last_opened_book_at")
         val RECENT_BOOKS = stringPreferencesKey("recent_books_history")
+        val REMOVED_RECENT_BOOKS = stringPreferencesKey("removed_recent_books")
     }
 
     val settings: Flow<LauncherSettings> = context.launcherDataStore.data.map { p ->
@@ -240,6 +241,11 @@ class SettingsRepository(private val context: Context) {
             val existing = parseRecentBooks(p[Keys.RECENT_BOOKS], null).filter { it != path }
             val updated = (listOf(path) + existing).take(20)
             p[Keys.RECENT_BOOKS] = org.json.JSONArray(updated).toString()
+
+            val removedMap = parseRecentRemoved(p[Keys.REMOVED_RECENT_BOOKS]).toMutableMap()
+            if (removedMap.remove(path) != null) {
+                p[Keys.REMOVED_RECENT_BOOKS] = org.json.JSONObject(removedMap as Map<*, *>).toString()
+            }
         }
 
     suspend fun removeBookFromRecent(path: String) =
@@ -248,6 +254,57 @@ class SettingsRepository(private val context: Context) {
             p[Keys.RECENT_BOOKS] = org.json.JSONArray(existing).toString()
             if (p[Keys.LAST_OPENED_BOOK_PATH] == path) {
                 p[Keys.LAST_OPENED_BOOK_PATH] = existing.firstOrNull() ?: ""
+            }
+            val now = System.currentTimeMillis()
+            val removedMap = parseRecentRemoved(p[Keys.REMOVED_RECENT_BOOKS]).toMutableMap()
+            removedMap[path] = now
+            p[Keys.REMOVED_RECENT_BOOKS] = org.json.JSONObject(removedMap as Map<*, *>).toString()
+        }
+
+    /**
+     * Merges recent reading history from external readers (KOReader, AlReaderX)
+     * into CrossPoint's reading history, sorted by newest timestamp.
+     */
+    suspend fun syncExternalReading(externalReads: List<Pair<String, Long>>) =
+        context.launcherDataStore.edit { p ->
+            if (externalReads.isEmpty()) return@edit
+
+            val existingPaths = parseRecentBooks(p[Keys.RECENT_BOOKS], p[Keys.LAST_OPENED_BOOK_PATH])
+            val lastOpenedTime = p[Keys.LAST_OPENED_BOOK_AT] ?: 0L
+            val removedMap = parseRecentRemoved(p[Keys.REMOVED_RECENT_BOOKS])
+
+            val pathTimeMap = mutableMapOf<String, Long>()
+
+            var fakeTime = if (lastOpenedTime > 0L) lastOpenedTime else System.currentTimeMillis()
+            for (path in existingPaths) {
+                pathTimeMap[path] = fakeTime
+                fakeTime -= 1000L
+            }
+
+            var anyNew = false
+            for ((path, time) in externalReads) {
+                val removedAt = removedMap[path] ?: 0L
+                if (time > removedAt) {
+                    val curTime = pathTimeMap[path] ?: 0L
+                    if (time > curTime) {
+                        pathTimeMap[path] = time
+                        anyNew = true
+                    }
+                }
+            }
+
+            if (anyNew || existingPaths.isEmpty()) {
+                val sorted = pathTimeMap.entries
+                    .filter { (path, _) -> java.io.File(path).isFile }
+                    .sortedByDescending { it.value }
+                    .map { it.key }
+                    .take(20)
+
+                if (sorted.isNotEmpty()) {
+                    p[Keys.RECENT_BOOKS] = org.json.JSONArray(sorted).toString()
+                    p[Keys.LAST_OPENED_BOOK_PATH] = sorted.first()
+                    p[Keys.LAST_OPENED_BOOK_AT] = pathTimeMap[sorted.first()] ?: System.currentTimeMillis()
+                }
             }
         }
 
@@ -264,6 +321,20 @@ class SettingsRepository(private val context: Context) {
             return listOf(fallbackPath)
         }
         return list
+    }
+
+    private fun parseRecentRemoved(raw: String?): Map<String, Long> {
+        if (raw.isNullOrBlank()) return emptyMap()
+        return runCatching {
+            val obj = org.json.JSONObject(raw)
+            val map = mutableMapOf<String, Long>()
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                map[k] = obj.optLong(k, 0L)
+            }
+            map
+        }.getOrDefault(emptyMap())
     }
 
     private fun parseIconOverrides(raw: String?): Map<String, String> {
